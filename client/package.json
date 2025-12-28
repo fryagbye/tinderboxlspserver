@@ -1,0 +1,60 @@
+{
+    "name": "tinderbox-action-code-lsp",
+    "description": "LSP Server for Tinderbox Action Code",
+    "author": "Antigravity",
+    "license": "MIT",
+    "version": "1.0.0",
+    "publisher": "antigravity",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:tinderbox-action-code"
+    ],
+    "main": "./out/src/extension",
+    "contributes": {
+        "languages": [
+            {
+                "id": "tinderbox-action-code",
+                "aliases": [
+                    "Tinderbox Action Code",
+                    "tbox"
+                ],
+                "extensions": [
+                    ".adc"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "Tinderbox Action Code",
+            "properties": {
+                "tinderboxActionCodeServer.maxNumberOfProblems": {
+                    "type": "number",
+                    "default": 1000,
+                    "description": "Maximum number of problems reported."
+                },
+                "tinderboxActionCodeServer.language": {
+                    "type": "string",
+                    "enum": [
+                        "en",
+                        "ja"
+                    ],
+                    "default": "en",
+                    "description": "Language for hover descriptions and documentation (en/ja)."
+                }
+            }
+        }
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.0"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.75.0",
+        "@types/node": "^18.0.0"
+    }
+}

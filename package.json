@@ -1,0 +1,73 @@
+{
+  "name": "tinderbox-action-code-lsp",
+  "displayName": "Tinderbox Action Code",
+  "description": "LSP Server for Tinderbox Action Code",
+  "author": "fryagbye",
+  "icon": "icon.png",
+  "license": "MIT",
+  "version": "0.1.2",
+  "publisher": "frygabye",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fryagbye/tinderboxlspserver"
+  },
+  "private": false,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:tinderbox-action-code"
+  ],
+  "main": "./client/out/src/extension",
+  "contributes": {
+    "languages": [
+      {
+        "id": "tinderbox-action-code",
+        "aliases": [
+          "Tinderbox Action Code",
+          "tbox"
+        ],
+        "extensions": [
+          ".tbxc"
+        ],
+        "configuration": "./client/language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Tinderbox Action Code",
+      "properties": {
+        "tinderboxActionCodeServer.maxNumberOfProblems": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum number of problems reported."
+        },
+        "tinderboxActionCodeServer.language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "ja"
+          ],
+          "default": "en",
+          "description": "Language for hover descriptions and documentation (en/ja)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b",
+    "watch": "tsc -b -w",
+    "postinstall": "cd client && npm install && cd ../server && npm install",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.19.0"
+  }
+}

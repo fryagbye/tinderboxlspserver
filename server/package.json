@@ -1,0 +1,15 @@
+{
+    "name": "tinderbox-lsp-server",
+    "description": "Server for Tinderbox LSP",
+    "version": "1.0.0",
+    "engines": {
+        "node": "*"
+    },
+    "dependencies": {
+        "vscode-languageserver": "^9.0.0",
+        "vscode-languageserver-textdocument": "^1.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0"
+    }
+}

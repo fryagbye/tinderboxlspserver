@@ -1,0 +1,15 @@
+.vscode/**
+.vscode-test/**
+src/**
+test/**
+**/*.ts
+**/*.map
+.gitignore
+tsconfig.json
+vsc-extension-quickstart.md
+**/.DS_Store
+server/src/**
+server/tsconfig.json
+client/src/**
+client/tsconfig.json
+.agent/**

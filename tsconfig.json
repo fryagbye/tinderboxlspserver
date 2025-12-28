@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es2020",
+        "outDir": "out",
+        "rootDir": ".",
+        "sourceMap": true,
+        "strict": true
+    },
+    "references": [
+        {
+            "path": "./client"
+        },
+        {
+            "path": "./server"
+        }
+    ]
+}
