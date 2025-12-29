@@ -1,0 +1,466 @@
+Name,Text,TextJa
+Action-Type Attributes,"Action The attribute data type of 'action' represents a string that can be used as an action; under the hood, Tinderbox caches the compiled action so it does not have to constantly re-parse the same expression. Thus these attributes should contain a string [sic] of valid Tinderbox action code. Some pre-existing system attributes, such as OnAdd and Rule have been re-classed from 'string' to 'action' type. This data type is not available for user attributes. Use 'string' instead. Default/Empty value An empty string. Sorting order As for String Data Type. Action-type System Attributes Built-in attributes of the action data type are listed below:","アクション
+「アクション」データ型は、アクションとして使用できる文字列を表します。内部的には、Tinderboxはコンパイルされたアクションをキャッシュするため、同じ式を絶えず再解析する必要がありません。したがって、これらの属性には有効なTinderboxアクションコードの文字列（原文ママ）を含める必要があります。OnAddやRuleなどの一部の既存のシステム属性は、「文字列」型から「アクション」型に再分類されました。このデータ型はユーザー属性では利用できません。代わりに「文字列」型を使用してください。
+
+デフォルト／空の値
+空の文字列。
+
+並べ替え順序
+文字列データ型と同じ。
+
+アクション型システム属性
+アクションデータ型の組み込み属性は以下の通りです。"
+Boolean-Type Attributes,"Boolean A binary value: either true or false. These values are case sensitive. If no default value is specified, a Boolean type defaults to a value of false. In the Tinderbox UI, Boolean attributes may often be represented as tick-boxes, e.g. in a note's displayed attributes table. A ticked box equates to true, and an empty box to false. When coercing a Boolean value—such as an expression result—to Number-type of data, true coerces to 1 and false coerces to 0 (zero). Default/Empty value A value of false. Sorting order false (un-ticked), then true (ticked). Boolean-type System Attributes Built-in attributes of the boolean data type are listed below: Boolean-type System Attributes set via Document Settings A number of Document Settings controls set the defaults for Boolean-type system attributes, directly or indirectly: * Text tab: ** $SmartQuotes. ** $UpdateTextLinksAfterRename. * Maps tab: ** $Never Composite.","Boolean（ブール型）：trueまたはfalseのいずれかをとる2値（バイナリ）です。これらの値は大文字と小文字を区別します。デフォルト値が指定されていない場合、Boolean型のデフォルトはfalseになります。TinderboxのUIにおいて、Boolean属性はノートの表示属性テーブルなどでチェックボックスとして表現されることがよくあります。チェックが入った状態はtrueに、空の状態はfalseに対応します。式の結果などのBoolean値を数値（Number）型データに強制変換（coerce）する場合、trueは1に、falseは0に変換されます。
+
+デフォルト値/空の値：false
+ソート順：false（チェックなし）、その次にtrue（チェックあり）
+
+Boolean型のシステム属性：
+Booleanデータ型の組み込み属性は以下の通りです。
+
+Document Settings（ドキュメント設定）を介して設定されるBoolean型のシステム属性：
+多くのドキュメント設定項目が、直接的または間接的にBoolean型システム属性のデフォルト値を設定します。
+* Textタブ:
+** $SmartQuotes
+** $UpdateTextLinksAfterRename
+* Mapsタブ:
+** $NeverComposite"
+Color-Type Attributes,"Color Any one of the following: * Hexadecimal. A colour represented as s string ""#RRGGBB""; a hash sign followed by 6 hexadecimal digits, a pair for the intensity level 0 to 250 in hexadecimal of Red, Green and Blue. This is the same format used for describing colours in HTML. Example: ""#A482BF"". The short form is also accepted, e.g. ""#f00"" for ""#ff0000"", where the two hex characters of each per-colour value are identical and the second character is omitted. Bare hex strings in action code, i.e. unquoted numbers preceded by a hash sign, are correctly identified as hex input values. * Named Colours. The name of a colour that either comes pre-defined in Tinderbox, or which you have defined for this Tinderbox document using the Colors pane of the attribute palette. Examples: blue, red, minty-fresh-green. When setting a shade of a named colour in a string the shade value (lighter, darkest, etc.) comes before the colour, unlike listings in Info view and the Inspectors; thus ""dark warm gray"" not ""warm gray dark"", ""light cyan"" not ""cyan light"". * HSV (Hue-Saturation-Value) value. Hue: a value from 0 to 360 degrees. Saturation and Value: a value from 0 to 100 percent. Enclosed in parentheses and preceded by 'hsv'. Examples: ""hsv(0,100,50)"", ""hsv(240,80,80)"". * RGB (Red-Green-Blue). Intensity levels represented as integers from 0 to 250. Enclosed in parentheses and preceded by 'rgb'. Examples: ""rgb(0,0,0)"" and ""rgb(68,153,68)"". This should not be confused with the rgb() action operator (which sets a hex format value string (see first bullet above). When displayed in a note's displayed attributes table, Color-type attributes show a colour-chip icon before the attribute value. Pressing the icon opens an OS colour picker dialog. If no default value is specified, a Color type defaults to an empty string (which is treated by Tinderbox as the value 'normal'); in Displayed Attributes table displays a white colour chip is displayed. In some cases, Tinderbox will show a dark red colour as a 'not initialised' colour value; it is hex colour code #6f0000, though its derivation as a value is not clear. Note that as 8-bit colour settings are translated within the app into 16-bit colours, rounding errors can occur. So, in some cases—most likely using HSV and HSV based transforms—the values used might not correspond precisely to those set by the user. Similarly, using format() with a colour attribute will always result in a hexadecimal value string regardless of the stored value. Thus it makes sense to export colour attributes as value(format($ColorAttr)) or value($ColorAttr.format()). However, note that coercing a default (blank) colour to a string value using format() or .format() will result in the colour value ""#ffffff"", which is not strictly the blank value. So, be wary of using that formatting as a means to check for a blank colour value; better is to use a short form Boolean test. Use in Export code When accessed via value() export code, it will return either a hex colour value or a named Tinderbox colour, depending on what is set for the destination attribute. Legacy only: using the deprecated get() or getFor() export codes, the colour is always returned as a hex figure including a # prefix, e.g. ""#FF9900"". Default/Empty value An empty string. Sorting order Named colours in decreasing lexical sort order, then #-based codes in decreasing lexical sort order with same valued three-character codes sorting after six-character ones (i.e. #ffffff before #fff). Color-type System Attributes Built-in attributes of the Color data type are listed below: Color-type System Attributes set via Document Settings A number of Document Settings controls set the defaults for Color-type system attributes, directly or indirectly: * Text tab: ** $TextBackgroundColor. ** $TextColor. * Maps tab: ** $MapBackgroundColor. ** $MapBackgroundAccentColor. * Outlines tab: ** $PrototypeHighlightColor.","カラー
+以下のいずれか一つ：
+* 16進数。「#RRGGBB」という文字列で表される色。ハッシュ記号の後に、赤、緑、青のそれぞれの強度を16進数で0から250のペアで表した6桁の16進数が続きます。これはHTMLで色を記述するために使用される形式と同じです。例：「#A482BF」。短縮形も受け入れられます。例えば「#ff0000」の代わりに「#f00」など、各色の2つの16進文字が同一である場合に2番目の文字を省略できます。アクションコード内の裸の16進文字列（つまり、ハッシュ記号で始まる引用符で囲まれていない数値）は、16進入力値として正しく識別されます。
+* 名前付きカラー。Tinderboxであらかじめ定義されている色、または属性パレットの「Colors」ペインを使用してこのTinderboxドキュメント用に定義した色の名前。例：blue、red、minty-fresh-green。文字列で名前付きカラーのシェード（明度など）を設定する場合、情報の表示やインスペクターのリストとは異なり、シェード値（lighter、darkestなど）が色の前に来ます。したがって、「warm gray dark」ではなく「dark warm gray」、「cyan light」ではなく「light cyan」となります。
+* HSV（色相・彩度・明度）値。色相：0から360度の値。彩度と明度：0から100パーセントの値。括弧で囲まれ、前に「hsv」が付きます。例：「hsv(0,100,50)」、「hsv(240,80,80)」。
+* RGB（赤・緑・青）。0から250までの整数として表される強度レベル。括弧で囲まれ、前に「rgb」が付きます。例：「rgb(0,0,0)」および「rgb(68,153,68)」。これは（最初の項目で述べたように、16進形式の値文字列を設定する）rgb()アクション演算子と混同しないでください。
+ノートの表示属性テーブルに表示される際、カラー型の属性は属性値の前にカラーチップアイコンを表示します。アイコンを押すと、OSのカラーピッカーダイアログが開きます。
+デフォルト値が指定されていない場合、カラー型はデフォルトで空の文字列になります（これはTinderboxによって「normal」という値として扱われます）。表示属性テーブルには白いカラーチップが表示されます。場合によっては、Tinderboxは「初期化されていない」カラー値として暗い赤色を表示することがあります。これは16進カラーコード #6f0000 ですが、値としての由来は不明です。
+アプリ内で8ビットのカラー設定が16ビットのカラーに変換される際、丸め誤差が発生する可能性があることに注意してください。そのため、場合によっては（特にHSVやHSVベースの変換を使用する場合）、使用される値がユーザーによって設定された値と正確に一致しないことがあります。同様に、カラー属性で format() を使用すると、格納されている値に関係なく、常に16進数値文字列が返されます。したがって、カラー属性をエクスポートする場合は、value(format($ColorAttr)) または value($ColorAttr.format()) とするのが合理的です。ただし、デフォルト（空白）のカラーを format() または .format() を使用して文字列値に強制変換すると、カラー値「#ffffff」になりますが、これは厳密には空白の値ではありません。そのため、空白のカラー値を確認する手段としてその書式設定を使用する際には注意してください。短い形式のブール値テストを使用するのが最善です。
+エクスポートコードでの使用
+value() エクスポートコードを介してアクセスすると、出力先属性に設定されている内容に応じて、16進カラー値または名前付きTinderboxカラーのいずれかが返されます。レガシーのみ：非推奨の get() または getFor() エクスポートコードを使用すると、色は常に「#」プレフィックスを含む16進数として返されます（例：「#FF9900」）。
+デフォルト/空の値
+空の文字列。
+ソート順
+名前付きカラーが辞書順の降順で並び、その後に#ベースのコードが辞書順の降順で並びます。同じ値の3文字コードは、6文字コードの後にソートされます（例：#fff の前に #ffffff）。
+カラー型システム属性
+カラーデータ型の組み込み属性を以下に示します。
+ドキュメント設定経由で設定されるカラー型システム属性
+多くのドキュメント設定コントロールは、カラー型システム属性のデフォルトを直接的または間接的に設定します。
+* テキスト タブ:
+** $TextBackgroundColor.
+** $TextColor.
+* マップ タブ:
+** $MapBackgroundColor.
+** $MapBackgroundAccentColor.
+* アウトライン タブ:
+** $PrototypeHighlightColor."
+Date-Type Attributes,"**Date Data Type in Tinderbox**
+
+**Definition & Format**
+A Date is a date and time string, typically enclosed in double quotes. Dates support addition, subtraction, and comparison similar to numbers. The visual presentation is controlled by date format codes. If no value is specified, a Date attribute defaults to ""never"".
+
+**Time Elements**
+Dates always include a time element, even if not displayed.
+*   **Default Time:** If a date is entered without a time (via code or Displayed Attributes), it defaults to the current system time.
+*   **Comparisons:** Time is considered in comparisons (e.g., greater than/less than), except when using `==` or `!=`. For exact equality checks including time, use the `interval()` function.
+*   **Modification:** Changing the date portion of a value using a designator does not alter the existing time portion. To set a specific time, it must be explicitly included (e.g., `date(""2022-03-27 00:00:00"")`).
+
+**Keywords & Arithmetic**
+Tinderbox recognizes keywords such as `today`, `now` (synonymous with `today`), `yesterday`, `tomorrow`, `day`, `week`, `month`, `year`, `hour`, and `minute`.
+*   **Expressions:** Complex expressions are supported inside quotes, such as `""yesterday + 1 week""` or `""tomorrow - 2 hours""`.
+*   **Defaults:** If a number is added without a unit (e.g., `""today + 1""`), 'day' is assumed.
+
+**Locale & Parsing**
+*   **OS Settings:** Tinderbox interprets manually entered dates (e.g., `6/7/2011`) based on the user's OS locale (US `mm/dd/yyyy` vs. UK `dd/mm/yyyy`).
+*   **Formats:** Both slashes (`/`) and periods (`.`) are accepted delimiters. Numeric reverse-order dates (e.g., `20090130`) are also usable.
+*   **ISO 8601:** Tinderbox uses ISO 8601 for XML storage and recognizes it for input (e.g., `2008-11-20 16:55:00`).
+*   **Single/Double Digit Years:** For years like 10 CE, use 4 digits (`0010`) to avoid ambiguity. Users should ensure their OS ""short"" date format uses 4-digit years.
+
+**Negative (BCE) Dates**
+*   **Range:** Integers from -1 to -2500 are interpreted as years BCE. Integers from -35000 to +2500 are years; outside this range, they are treated as seconds from the Unix epoch (Jan 1, 1970).
+*   **Display:** Dates before the common era appear with ""BCE"" (e.g., ""44 BCE"").
+*   **Limitations:** Negative dates cannot be easily tested with standard comparison operators (`>`/`<`) or entered directly into Displayed Attributes. Workarounds involve using stamps to mathematically flip positive dates to negative. The `.year` property always returns a positive integer.
+
+**Sorting & Intervals**
+*   **Sorting:** Dates sort in ascending order. The value ""never"" always sorts last. Use `.sort` for lists of dates.
+*   **Durations:** Time durations should be stored using the **Interval** data type (max ~30 days).
+*   **Calculations:** Subtracting two dates yields a result in days. Operations involving ""never"" return ""never"".","**TinderboxにおけるDate型（日付型）**
+
+**定義と形式**
+Date型は、通常二重引用符で囲まれた日付と時刻の文字列です。数値と同様に、加算、減算、および比較をサポートしています。表示形式は日付フォーマットコードによって制御されます。値が指定されていない場合、Date属性のデフォルト値は ""never""（未設定）となります。
+
+**時刻要素**
+Date型には、表示されていなくても常に時刻要素が含まれます。
+* **デフォルトの時刻：** コードやDisplayed Attributes（表示属性）を介して時刻なしで日付を入力した場合、現在のシステム時刻がデフォルトとして設定されます。
+* **比較：** `==` または `!=` を使用する場合を除き、比較（より大きい/より小さいなど）には時刻が考慮されます。時刻を含めた厳密な等価性をチェックするには、`interval()` 関数を使用してください。
+* **変更：** 指定子（designator）を使用して値の日付部分のみを変更しても、既存の時刻部分は変更されません。特定の時刻を設定するには、`date(""2022-03-27 00:00:00"")` のように明示的に含める必要があります。
+
+**キーワードと算術演算**
+Tinderboxは、`today`、`now`（`today`と同義）、`yesterday`、`tomorrow`、`day`、`week`、`month`、`year`、`hour`、`minute` などのキーワードを認識します。
+* **式：** `""yesterday + 1 week""` や `""tomorrow - 2 hours""` のように、引用符内で複雑な式を記述できます。
+* **デフォルト：** 単位を指定せずに数値を加算した場合（例：`""today + 1""`）、'day'（日）が加算されるものとみなされます。
+
+**ロケールと解析**
+* **OS設定：** 手動で入力された日付（例：`6/7/2011`）は、ユーザーのOSロケール（米国式の `mm/dd/yyyy` か、英国式の `dd/mm/yyyy` かなど）に基づいて解釈されます。
+* **フォーマット：** 区切り文字としてスラッシュ（`/`）とピリオド（`.`）の両方が受け入れられます。数値による逆順の日付（例：`20090130`）も使用可能です。
+* **ISO 8601：** TinderboxはXMLストレージにISO 8601を使用しており、入力時にもそれを認識します（例：`2008-11-20 16:55:00`）。
+* **1桁/2桁の年：** 紀元10年などの年の場合は、曖昧さを避けるために4桁（`0010`）を使用してください。また、OSの「短い形式」の日付設定で4桁の年が使用されていることを確認してください。
+
+**負の数（紀元前/BCE）の日付**
+* **範囲：** -1から-2500までの整数は紀元前（BCE）の年として解釈されます。-35000から+2500までの整数は「年」として扱われ、この範囲外の数値はUnixエポック（1970年1月1日）からの秒数として処理されます。
+* **表示：** 共通紀元前（紀元前）の日付には ""BCE"" が付いて表示されます（例：""44 BCE""）。
+* **制限事項：** 負の日付は、標準の比較演算子（`>` / `<`）で簡単にテストしたり、Displayed Attributesに直接入力したりすることはできません。回避策として、スタンプを使用して正の日付を数学的に負に反転させる方法があります。なお、`.year` プロパティは常に正の整数を返します。
+
+**ソートとインターバル（期間）**
+* **ソート：** 日付は昇順でソートされます。""never"" という値は常に最後にソートされます。日付のリストには `.sort` を使用してください。
+* **期間：** 時間の長さ（持続時間）を保存するには、**Interval型**（最大約30日間）を使用する必要があります。
+* **計算：** 2つの日付を引き算すると、結果は「日」単位で返されます。""never"" を含む演算は ""never"" を返します。"
+Dictionary-Type Attributes,"**Tinderbox Dictionary Attribute Summary**
+
+**Definition & Structure**
+A Dictionary attribute is a list of paired keys and values (`key:value`), replacing the older lookup tables feature. It is faster to construct and query than lookup tables but is not intended for large/complex values with heavy punctuation.
+- **Syntax:** Keys end with a colon, values end with a semicolon (e.g., `key:value;`).
+- **Uniqueness:** Keys must be unique and are case-sensitive. Values can be duplicated.
+- **Inheritance:** Follows standard scope and inheritance rules.
+- **Nesting:** Values can contain Lists (`[]`) or other Dictionaries (`{}`).
+
+**Creation & Syntax**
+Dictionaries can be created using the `dictionary()` operator or the preferred brace syntax `{}`.
+- *Example:* `$MyDictionary = {cat:animal; dog:animal; rock:mineral}`.
+- **Quoting:** Keys generally do not require quotes. Values should be quoted if they contain specific characters (like `{}()://` or quotation marks) or in legacy syntax, though the brace syntax `{}` often removes the need for quotes around simple string values.
+- **Whitespace:** Whitespace around colons or semicolons is ignored.
+- **Allowed Characters:** Best practice restricts keys/values to alphanumeric characters, underscores, hyphens, and periods. Avoid punctuation like brackets and slashes to prevent parsing errors.
+
+**Modifying Data**
+- **Adding/Updating:** Use the addition operator (`+` or `+=`). If the key exists, its value is updated; otherwise, the new pair is added.
+  - *Example:* `$MyDictionary += {apple:plant}`.
+- **Deleting:** Use subtraction (`-` or `-=`) with the key name to remove the pair.
+  - *Example:* `$MyDictionary -= ""dog""`.
+  - *Note:* You cannot subtract a list of keys; they must be removed individually. Setting a value to an empty string (`""""`) does *not* remove the key.
+- **Changing Values:** Assign a new value to a specific key index.
+  - *Example:* `$MyDictionary[apple] = ""pie""`.
+  - *Note:* Math operators (like `+=`) do not work directly on key values (e.g., `$MyDictionary[key] += 1` is invalid); use explicit reassignment: `$MyDictionary[key] = $MyDictionary[key] + 1`.
+
+**Advanced Features**
+- **Merging:** Dictionaries can be merged by adding them together. If keys collide, values from the right-hand (last added) dictionary overwrite existing ones.
+- **Multi-Values:** Supports nested data structures.
+  - *Example:* `{rock:{granite:mineral; basalt:mineral}}`.
+- **Iteration:** Iterate by retrieving the list of keys (`$MyDictionary.keys`) and looping through them with `.each()`.
+- **Sorting:** Dictionaries are not inherently sorted. To process in order, retrieve keys, sort the key list, and then iterate.
+- **Defaults:** Unlike lookup lists, Dictionaries do not have an automatic 'default' key. Users must manually check for a key's existence (e.g., `if($MyDictionary.contains(key))...`) to handle missing data.
+
+**System Attributes**
+Built-in attributes can also use the Dictionary data type, utilizing these same behaviors for storage and manipulation.","**Tinderbox ディクショナリ属性の概要**
+
+**定義と構造**
+ディクショナリ属性は、キーと値のペア（`key:value`）のリストであり、従来のルックアップテーブル機能に代わるものです。ルックアップテーブルよりも構築やクエリが高速ですが、句読点を多用するような複雑な値や大きな値の保持には向いていません。
+- **構文:** キーはコロン（:）で終わり、値はセミコロン（;）で終わります（例: `key:value;`）。
+- **一意性:** キーは一意である必要があり、大文字と小文字を区別します。値は重複しても構いません。
+- **継承:** 標準的なスコープと継承のルールに従います。
+- **ネスト:** 値にはリスト（`[]`）や他のディクショナリ（`{}`）を含めることができます。
+
+**作成と構文**
+ディクショナリは、`dictionary()` オペレーター、または推奨される中括弧構文 `{}` を使用して作成できます。
+- *例:* `$MyDictionary = {cat:animal; dog:animal; rock:mineral}`
+- **クオート（引用符）:** 通常、キーにクオートは不要です。値に特定の文字（`{}()://` や引用符など）が含まれる場合や、古い構文を使用する場合はクオートが必要ですが、中括弧構文 `{}` を使用すれば、単純な文字列値にクオートを付ける必要はほとんどありません。
+- **空白:** コロンやセミコロンの前後の空白は無視されます。
+- **使用可能な文字:** キーや値には英数字、アンダースコア、ハイフン、ピリオドを使用するのがベストプラクティスです。パースエラーを避けるため、角括弧やスラッシュなどの記号は避けてください。
+
+**データの変更**
+- **追加・更新:** 加算演算子（`+` または `+=`）を使用します。キーが存在する場合は値が更新され、存在しない場合は新しいペアが追加されます。
+  - *例:* `$MyDictionary += {apple:plant}`
+- **削除:** 減算演算子（`-` または `-=`）にキー名を指定してペアを削除します。
+  - *例:* `$MyDictionary -= ""dog""`
+  - *注意:* キーのリストを一括で減算することはできません。個別に削除する必要があります。また、値を空の文字列（`""""`）に設定しても、キー自体は削除されません。
+- **値の変更:** 特定のキーインデックスに新しい値を割り当てます。
+  - *例:* `$MyDictionary[apple] = ""pie""`
+  - *注意:* 算術演算子（`+=` など）をキーの値に対して直接使用することはできません（例: `$MyDictionary[key] += 1` は無効）。明示的に再代入してください：`$MyDictionary[key] = $MyDictionary[key] + 1`。
+
+**高度な機能**
+- **マージ:** ディクショナリ同士を加算することでマージできます。キーが重複した場合、右側（後から追加された方）のディクショナリの値が既存の値を上書きします。
+- **マルチバリュー:** 入れ子構造（ネスト）をサポートしています。
+  - *例:* `{rock:{granite:mineral; basalt:mineral}}`
+- **反復処理（イテレーション）:** キーのリスト（`$MyDictionary.keys`）を取得し、`.each()` でループ処理を行います。
+- **ソート:** ディクショナリ自体に特定の順序はありません。順序通りに処理するには、キーを取得してソートしてから反復処理を行ってください。
+- **デフォルト値:** ルックアップリストとは異なり、ディクショナリには自動的な「デフォルト」キーはありません。データがない場合を処理するには、手動でキーの存在を確認する必要があります（例: `if($MyDictionary.contains(key))...`）。
+
+**システム属性**
+組み込みのシステム属性にもディクショナリ型を使用しているものがあり、これらと同じ動作で保存や操作が可能です。"
+Email-Type Attributes,"Email An Email attribute data type is offered to address activities related to parsing/sorting email data. An email address string, e.g. jdoe@example.com. If no default value is specified, an Email type defaults to an empty string. Emails are not delimited (i.e. quotes are not required). Email attributes behave like string attributes, but with a special behaviour when displayed in a note's displayed attributes table. There, Email-type attributes show an envelope icon before the attribute value. Pressing the icon opens a draft email to that address using the default email client using the notes text as the draft content. More precisely, pressing the button composes a message, whose body is the $Text of the note, and opens that message in the default email client (e.g., Apple Mail), from which it might be sent to the address that appears in $Email. There is no validation that the value in $Email is correctly formed. Default/Empty value An empty string. Sorting order As for String Data Type. Email-type System Attributes Built-in attributes of the Email data type are listed below:","Email（メール型）
+Email属性データ型は、メールデータの解析やソートに関連する処理に対応するために提供されています。メールアドレスの文字列（例：jdoe@example.com）を扱います。デフォルト値が指定されていない場合、Email型はデフォルトで空の文字列になります。Email型は（引用符などの）区切り文字を必要としません。
+
+Email属性は基本的には文字列（String）属性と同様に動作しますが、ノートの「表示属性（displayed attributes）」テーブルに表示される際に特別な挙動を示します。そこでは、Email型の属性値の前に封筒のアイコンが表示されます。このアイコンをクリックすると、デフォルトのメールクライアントが起動し、そのアドレス宛のメールの下書きが作成されます。その際、ノートのテキスト（$Text）が下書きの本文として使用されます。より正確には、ボタンを押すとノートの$Textを本文とするメッセージが作成され、デフォルトのメールクライアント（Apple Mailなど）でそのメッセージが開かれます。そこから、$Emailに設定されているアドレスに送信することができます。
+
+$Emailの値が正しい形式であるかどうかのバリデーション（検証）は行われません。
+
+デフォルト値 / 空の値
+空の文字列。
+
+ソート順
+文字列（String）データ型と同様。
+
+Email型のシステム属性
+Emailデータ型の組み込み属性（システム属性）は以下の通りです。"
+File-Type Attributes,"File A path to a file. When setting this type of attribute a file selection dialog is shown instead of a text box. The selected file is entered as the attribute value for that note. If no default value is specified, a File type defaults to an empty string. The path stored is in POSIX form (forward slash delimited) and is the full local path to the file or folder. When files from the user's directory are dropped into Tinderbox or into a file attribute, Tinderbox uses the tilde (~) abbreviation to represent the path to the user's directory. This should make it easier to share one Tinderbox document across several machines, each of which share files in common locations (e.g. Dropbox) but which have different user names. When displayed in a note's displayed attributes table, Find-type attributes show a folder icon before the attribute value. Pressing the icon opens that attribute's stored OS file path (if any) for a file, using the in the default app as determined by Finder, or for a folder it opens Finder. Default/Empty value An empty string. Sorting order As for String Data Type. File-type System Attributes Built-in attributes of the file data type are listed below:","File（ファイル）
+ファイルへのパス。このタイプの属性を設定する際、テキストボックスの代わりにファイル選択ダイアログが表示されます。選択されたファイルが、そのノートの属性値として入力されます。デフォルト値が指定されていない場合、Fileタイプはデフォルトで空の文字列になります。保存されるパスはPOSIX形式（スラッシュ区切り）であり、ファイルまたはフォルダーへの完全なローカルパスです。ユーザーのディレクトリにあるファイルがTinderboxやファイル属性にドロップされると、Tinderboxはチルダ（~）の省略記号を使用してユーザーディレクトリへのパスを表します。これにより、共通の場所（Dropboxなど）にあるファイルを共有しているがユーザー名が異なる複数のマシン間で、一つのTinderboxドキュメントを共有しやすくなります。ノートの表示属性テーブルに表示される際、Fileタイプ（原文ではFind-type）の属性は属性値の前にフォルダーアイコンを表示します。アイコンを押すと、ファイルの場合はFinderで設定されたデフォルトのアプリを使用して、その属性に保存されたOSファイルパス（もしあれば）を開きます。フォルダーの場合はFinderを開きます。
+
+デフォルト値／空の値
+空の文字列。
+
+ソート順
+Stringデータタイプと同様。
+
+Fileタイプのシステム属性
+以下に、Fileデータタイプの組み込み属性を列挙します。"
+Font-Type Attributes,"Font The attribute data type of 'font' represents a string defining a font name. Some pre-existing system attributes, such as $NameFont have been re-classed from 'string' to 'action' type. This data type is not available for user attributes. Default/Empty value An empty string. Sorting order As for String Data Type. Font-type System Attributes Built-in attributes of the file data type are listed below: Font-type System Attributes set via Document Settings A number of Document Settings controls set the defaults for Font-type system attributes, directly or indirectly: * Text tab: ** $TextFont. * Maps tab: ** $NameFont.","Font
+属性データ型「font」は、フォント名を定義する文字列を表します。$NameFont などの一部の既存のシステム属性は、「string」型から「action」型に再分類されました。このデータ型はユーザー属性では利用できません。
+
+デフォルト／空の値
+空の文字列。
+
+ソート順
+文字列（String）データ型と同様。
+
+フォント型システム属性
+fileデータ型の組み込み属性は以下の通りです：
+
+ドキュメント設定を介して設定されるフォント型システム属性
+多くのドキュメント設定のコントロールが、直接的または間接的にフォント型システム属性のデフォルト値を設定します：
+* 「Text」タブ：$TextFont
+* 「Maps」タブ：$NameFont"
+Interval-Type Attributes,"**Interval Attribute Type Summary**
+
+The **Interval** attribute type represents time intervals and durations. While primarily designed for durations under an hour (defaulting to ""00:00"" for mm:ss), it supports hours and days.
+
+**Format and Input**
+*   **Standard Format:** ""mm:ss"" (e.g., ""01:30"" for 1 min 30 sec) or ""hh:mm:ss"" (e.g., ""02:01:00"" for 2 hrs 1 min). Seconds must be included to distinguish hours from minutes.
+*   **Parsing:** Inputs don't require zero-padding (""4:2"" becomes ""04:02""). Overflow units are automatically re-parsed (e.g., ""90:70"" becomes ""01:31:10"").
+*   **Alternative Syntax:** Supports suffixes like 'h' (hours) and 'd' (days).
+    *   `1h30` = 1 hour, 30 mins.
+    *   `1 day 01:00:00` = 25 hours.
+    *   `2d5` = 2 days, 5 hours.
+*   **Decimal Numbers:** Floating-point numbers assigned to an Interval are treated as seconds. Decimals are discarded (truncated, not rounded). E.g., `5406` and `5406.8` both result in ""01:30:06"".
+
+**Creation**
+*   **`interval(dataStr)`**: Creates an interval from a string.
+*   **`interval(startDate, endDate)`**: Calculates the time between two Date objects as an Interval. (Note: Subtracting dates directly returns *days* as a number, not an Interval).
+
+**Usage & Arithmetic**
+*   **Scope:** Supports up to days. Months and years are not understood by the parser, though large day values (e.g., ""62 days"") work. The advised maximum is 1 year (365 days).
+*   **Date Arithmetic:** Intervals can be added to or subtracted from Date attributes (e.g., `$MyDate + $MyInterval`).
+    *   Negative intervals (e.g., ""-05:30"") are supported for subtraction or offsetting dates.
+*   **Operations:** Can be multiplied/divided by numbers and compared for equality (`==`, `!=`) or magnitude (`<`, `>`).
+*   **String context:** Intervals read as strings (e.g., ""22:09"") and can be concatenated directly with other strings.
+
+**Formatting & Properties**
+*   **Formatting:** `Interval.format()` has limited options. The internal display format cannot be changed in Displayed Attributes.
+*   **Default Value:** ""00:00"" (zero duration).
+*   **Sorting:** Sorts by increasing duration (unset values appear first).","**Interval属性タイプの概要**
+
+**Interval**属性タイプは、時間の間隔や期間を表します。主に1時間未満の期間（デフォルトはmm:ss形式の「00:00」）を想定して設計されていますが、時間（hour）や日（day）もサポートしています。
+
+**形式と入力**
+*   **標準形式：** 「mm:ss」（例：1分30秒なら「01:30」）または「hh:mm:ss」（例：2時間1分なら「02:01:00」）。時間と分を区別するために、秒を含める必要があります。
+*   **解析：** 入力にゼロ埋めは不要です（「4:2」は「04:02」になります）。単位のオーバーフローは自動的に再解析されます（例：「90:70」は「01:31:10」になります）。
+*   **代替構文：** 「h」（時間）や「d」（日）といった接尾辞をサポートしています。
+    *   `1h30` = 1時間30分
+    *   `1 day 01:00:00` = 25時間
+    *   `2d5` = 2日と5時間
+*   **小数：** Intervalに割り当てられた浮動小数点数は、秒として扱われます。小数は切り捨てられ（四捨五入ではなく切り捨て）、整数部のみが有効になります。例：`5406` と `5406.8` はどちらも「01:30:06」になります。
+
+**作成**
+*   **`interval(dataStr)`**：文字列からIntervalを作成します。
+*   **`interval(startDate, endDate)`**：2つのDateオブジェクト間の時間をIntervalとして計算します。（注意：日付を直接引き算すると、Intervalではなく数値としての「日数」が返されます）
+
+**使用方法と演算**
+*   **範囲：** 日までサポートしています。パーサーは月や年を理解しませんが、大きな日の値（例：「62 days」）は機能します。推奨される最大値は1年（365日）です。
+*   **日付の演算：** IntervalはDate属性に加算したり、Date属性から減算したりできます（例：`$MyDate + $MyInterval`）。
+    *   減算や日付のオフセット用に、負の間隔（例：「-05:30」）もサポートされています。
+*   **演算：** 数値による乗算・除算や、等価性（`==`, `!=`）、大きさ（`<`, `>`）の比較が可能です。
+*   **文字列コンテキスト：** Intervalは文字列（例：「22:09」）として読み取られ、他の文字列と直接連結できます。
+
+**フォーマットとプロパティ**
+*   **フォーマット：** `Interval.format()` のオプションは限られています。Displayed Attributes（表示属性）における内部的な表示形式を変更することはできません。
+*   **デフォルト値：** 「00:00」（ゼロ期間）。
+*   **ソート：** 期間の昇順でソートされます（未設定の値が最初に表示されます）。"
+List-Type Attributes,"**Tinderbox List Data Type Summary**
+
+**Definition & Structure**
+*   **Concept:** Lists are semi-colon delimited strings (e.g., ""item1;item2""). Unlike Sets, Lists allow duplicate values and retain insertion order. Sets are essentially sorted, de-duplicated Lists.
+*   **Storage:** Stored internally as strings. Individual items do not have explicit data types (can be numbers, booleans, etc.).
+*   **Indexing:** Zero-based (Item #1 is at index 0).
+
+**Declaration**
+*   **Syntax:** Use square brackets: `$MyList=[Frogs;Dogs;Logs]`.
+*   **Deprecated:** Enclosing in double quotes (e.g., `$MyList=""Frogs;Dogs""`) is supported but discouraged.
+*   **UI Entry:** When typing in the Inspector or Displayed Attributes, omit brackets or quotes (e.g., `planes;trains`).
+
+**Modifying Lists**
+*   **Adding Items:**
+    *   Use `+` or `+=` to append: `$PetTypes=$PetTypes+[rabbits]`.
+    *   Prepend by placing the new item first: `$PetTypes=[rabbits]+$PetTypes`.
+    *   Standard addition flattens lists (`[1]+[2;3]` becomes `1;2;3`). To add a sublist, use `list.extend()` or double brackets.
+*   **Deleting Items:**
+    *   Use `-` or `-=` to remove items: `$PetTypes-[dogs]`.
+    *   **Note:** This removes *all* occurrences of the value. Removing specific instances requires iterating with `List.each()`.
+*   **Replacing Items:**
+    *   Target via index: `$MyList[2]=[NewVal]` replaces the third item.
+
+**Nested Lists**
+*   Lists can contain other lists: `$MyList = [1; [2;3]; 4]`.
+*   **Access:** `$MyList[1]` returns the sub-list `[2;3]`. `$MyList[1][0]` returns `2`.
+
+**Operations**
+*   **De-duplication:** Use `$MyList.unique` to remove duplicates.
+*   **Sorting:** Lists are not auto-sorted (unlike Sets). Use sort operators if required.
+*   **Querying:**
+    *   `.contains(""val"")`: Returns `true` for exact matches. No partial matching.
+    *   `.icontains(""val"")`: Case-insensitive exact match.
+*   **Escaping:** Use `\;` to include a literal semi-colon in a list item.
+
+**System Behavior**
+*   Most group-scope operators work with Lists.
+*   Default value is an empty string.","**Tinderbox リスト（List）データ型の概要**
+
+**定義と構造**
+*   **コンセプト:** リストはセミコロンで区切られた文字列です（例：「item1;item2」）。セット（Set）とは異なり、リストは重複値を許容し、挿入順序を保持します。セットは本質的に、ソートされ重複が排除されたリストです。
+*   **ストレージ:** 内部的には文字列として保存されます。個々の項目は明示的なデータ型を持ちません（数値、ブール値などを混在させることが可能です）。
+*   **インデックス:** 0ベース（1番目の項目はインデックス0）です。
+
+**宣言**
+*   **構文:** 角括弧を使用します：`$MyList=[Frogs;Dogs;Logs]`。
+*   **非推奨:** 二重引用符での囲み（例：`$MyList=""Frogs;Dogs""`）はサポートされていますが、推奨されません。
+*   **UI入力:** インスペクタや表示属性（Displayed Attributes）に入力する際は、括弧や引用符を省略します（例：`planes;trains`）。
+
+**リストの変更**
+*   **項目の追加:**
+    *   `+` または `+=` を使用して末尾に追加します：`$PetTypes=$PetTypes+[rabbits]`。
+    *   新しい項目を最初に置くことで先頭に追加します：`$PetTypes=[rabbits]+$PetTypes`。
+    *   標準的な加算ではリストが平坦化されます（`[1]+[2;3]` は `1;2;3` になります）。サブリストを追加するには、`list.extend()` または二重括弧を使用します。
+*   **項目の削除:**
+    *   `-` または `-=` を使用して項目を削除します：`$PetTypes-[dogs]`。
+    *   **注意:** これにより、その値のすべての出現箇所が削除されます。特定のインスタンスのみを削除するには、`List.each()` を使用した反復処理が必要です。
+*   **項目の置換:**
+    *   インデックスで指定します：`$MyList[2]=[NewVal]` は3番目の項目を置換します。
+
+**入れ子状のリスト（ネスト）**
+*   リストには他のリストを含めることができます：`$MyList = [1; [2;3]; 4]`。
+*   **アクセス:** `$MyList[1]` はサブリスト `[2;3]` を返します。`$MyList[1][0]` は `2` を返します。
+
+**操作**
+*   **重複排除:** `$MyList.unique` を使用して重複を削除します。
+*   **ソート:** リストは（セットとは異なり）自動的にソートされません。必要に応じてソート演算子を使用してください。
+*   **クエリ:**
+    *   `.contains(""val"")`: 完全一致の場合に `true` を返します。部分一致は行いません。
+    *   `.icontains(""val"")`: 大文字小文字を区別しない完全一致。
+*   **エスケープ:** リスト項目内にリテラルのセミコロンを含めるには `\;` を使用します。
+
+**システムの動作**
+*   ほとんどのグループスコープ演算子がリストで動作します。
+*   デフォルト値は空の文字列です。"
+Number-Type Attributes,"Number A numerical value. If no default value is specified, a Number type defaults to the value 0 (zero). User attributes of Number type may be configured, at first creation, as 'sequential'. A sequential number attribute is like a database counter field, where the next unused number is issued and values no longer used are not re-issued; i.e. the next number is always higher than the last. Sequential numbers start at 1. When a new sequential attribute is added to an existing document, the already-created notes are initialised with sequential values of the new attribute, starting with the first notes in $OutlineOrder sequence. Thereafter notes are numbered in the order added, regardless of $OutlineOrder. Very large or small numbers may be displayed (and set) in exponential notation: 0.000001 = 1e-06 $MyNumber = 1.2e+3 sets '1200' When very large or small number strings are typed into a Displayed Attributes box the result may be '0', in which case use exponential notation. The Displayed Attributes display will also truncate the number of decimal places shown. The display limits seem to be: * Whole (non decimal) numbers will display up to 9 digits, i.e. between -999999999 and 999999999. * Numbers over 1, positive or negative, will display 6 digits e.g. 150.123 or 1.12346. * Numbers over 1, positive or negative, will display 6 decimal places e.g. 0.012345. When typing/pasting in number values to a KA box the input value is stored and not the rounded/truncated visible value. To see the decimal places in full coerce the value to a string, e.g. set a string attribute to the value of the number attribute. Beware that values copied from a Displayed Attributes display box use the visible value and not the real underlying value, so passing the number to a string and reading the latter is useful if data fidelity is required. Default/Empty value The value 0 (zero). Sorting order Ascending value in numeric sort order; default (0) thus lists first. Number-type System Attributes Built-in attributes of the number data type are listed below: Number-type System Attributes set via Document Settings A number of Document Settings controls set the defaults for Number-type system attributes, directly or indirectly: * Text tab: ** $ParagraphSpacing. ** $TextFontSize. * Maps tab: ** $MapTextSize. ** $OutlineTextSize. (Deprecated) ** $InteriorScale.","数値（Number）
+数値データです。デフォルト値が指定されていない場合、Number型のデフォルト値は 0（ゼロ）になります。
+Number型のユーザー属性は、新規作成時に「sequential（連番）」として構成することができます。連番の数値属性はデータベースのカウンターフィールドのようなもので、次に使用可能な番号が割り当てられ、一度使われなくなった値が再利用されることはありません。つまり、次の番号は常に前の番号よりも大きくなります。連番は 1 から始まります。既存のドキュメントに新しい連番属性を追加すると、作成済みのノートは $OutlineOrder（アウトライン順）の最初のノートから順に、その属性の連番で初期化されます。それ以降、ノートは $OutlineOrder に関わらず、追加された順に番号が振られます。
+
+非常に大きな数値や小さな数値は、指数表記で表示（および設定）することができます。
+例：0.000001 = 1e-06
+$MyNumber = 1.2e+3 と入力すると「1200」が設定されます。
+非常に大きな、あるいは小さな数値文字列を Displayed Attributes（表示属性）ボックスに入力した際、結果が「0」になる場合は、指数表記を使用してください。
+
+また、Displayed Attributes の表示では、表示される小数点以下の桁数が切り捨てられます。表示の制限は以下の通りです：
+* 整数（小数点以下なし）は最大 9 桁（-999,999,999 から 999,999,999 まで）表示されます。
+* 正負を問わず、1 以上の数値は 6 桁（例：150.123 や 1.12346）表示されます。
+* 正負を問わず、1 以上の数値（※原文ママ。例示から推測するに 1 未満の数値のこと）は小数点以下 6 桁（例：0.012345）表示されます。
+
+KA（Key Attributes）ボックスに数値を入力または貼り付ける際、保存されるのは入力した値そのものであり、丸められたり切り捨てられたりした表示上の値ではありません。小数点以下をすべて確認するには、値を文字列に強制変換してください（例：文字列属性に数値属性の値を代入するなど）。Displayed Attributes の表示ボックスからコピーされた値は、実際の基礎となる値ではなく、表示されている値が使用されることに注意してください。そのため、データの正確性が必要な場合は、数値を一度文字列に渡してから、その文字列を読み取ることが有効です。
+
+デフォルト値／空の値
+値 0（ゼロ）。
+
+ソート順
+数値ソート順による昇順。したがって、デフォルト（0）が最初にリストされます。
+
+数値型のシステム属性
+数値型の組み込み属性を以下に示します。
+
+Document Settings で設定される数値型システム属性
+多くの Document Settings のコントロールが、直接的または間接的に数値型システム属性のデフォルトを設定します：
+* Text タブ：
+  * $ParagraphSpacing
+  * $TextFontSize
+* Maps タブ：
+  * $MapTextSize
+  * $OutlineTextSize（非推奨）
+  * $InteriorScale"
+Set-Type Attributes,"**Set Data Type Summary**
+
+A **Set** in Tinderbox is a special data type consisting of a string of discrete values delimited by semicolons (e.g., `[astronomy;chemistry;dogs]`). It is primarily used for collections like tags, categories, or topics where unique values are required.
+
+**Key Characteristics**
+*   **No Duplicates:** Unlike the List data type, Sets automatically remove duplicate entries.
+*   **Auto-Sorting:** Sets enforce a specific sort order (A-Z case-sensitive lexical sort). Unlike Lists, they do not preserve the order in which items were added.
+*   **Storage:** Internally stored as a single string of semi-colon separated items. All items are treated as strings, even if they appear numeric.
+*   **Relationship to Lists:** A Set can be considered a de-duplicated, sorted version of a List. Assigning a List to a Set attribute ($MySet = $MyList) effectively de-dupes and sorts the list data.
+
+**Defining and Editing**
+*   **Via UI:** When entering data in the Inspector or Displayed Attributes, type values separated by semi-colons (e.g., `red;green;blue`). Do not use enclosing quotes or brackets.
+*   **Via Code:** Use square brackets to define literal sets: `$MySet=[Frogs;Dogs;Logs];`. (Note: Older versions used quotes `""Frogs;Dogs""`, but bracket notation is now preferred).
+*   **Escaping:** To include a literal semi-colon within a value, escape it with a backslash (`\;`).
+
+**Manipulation in Action Code**
+*   **Adding:** Use the `+` or `+=` operator. If an item already exists in the Set, it is ignored.
+    *   Example: `$PetTypes=$PetTypes+[dogs];`
+*   **Removing:** Use the `-` or `-=` operator. This removes the specified value(s) from the Set.
+    *   Example: `$PetTypes=$PetTypes-[cats];`
+
+**Querying and Export**
+*   **Testing:** Use `.contains(""value"")` to test if a specific discrete value exists in the Set. This requires an exact match of the list item (not a partial string match).
+    *   `$PetTypes.contains(""dogs"")` returns `true` if ""dogs"" is in the set.
+    *   `$PetTypes.contains(""dog"")` returns `false`.
+*   **Case Insensitivity:** Use `.icontains()` for case-insensitive matching.
+*   **Exporting:** Use `.format()` or `format()` to convert Sets into formatted strings (such as HTML lists) for export purposes.","**Set（セット）データ型の概要**
+
+Tinderboxにおける**Set**は、セミコロンで区切られた個別の値の文字列（例：`[astronomy;chemistry;dogs]`）で構成される特殊なデータ型です。主に、一意の値が必要なタグ、カテゴリ、トピックなどのコレクションに使用されます。
+
+**主な特徴**
+*   **重複なし:** Listデータ型とは異なり、Setは重複するエントリを自動的に削除します。
+*   **自動ソート:** Setは特定のソート順（大文字小文字を区別するA-Zの辞書順）を強制します。Listとは異なり、項目が追加された順序は保持されません。
+*   **ストレージ:** 内部的には、セミコロンで区切られた項目の単一の文字列として保存されます。数値のように見えるものであっても、すべての項目は文字列として扱われます。
+*   **Listとの関係:** Setは、Listの重複を除去してソートしたバージョンと考えることができます。ListをSet属性に代入すると（$MySet = $MyList）、リストデータが効率的に重複排除およびソートされます。
+
+**定義と編集**
+*   **UI経由:** インスペクターやDisplayed Attributesでデータを入力する際は、値をセミコロンで区切って入力します（例：`red;green;blue`）。引用符や角括弧で囲む必要はありません。
+*   **コード経由:** リテラルセットを定義するには、角括弧を使用します：`$MySet=[Frogs;Dogs;Logs];`。（注：古いバージョンでは引用符 `""Frogs;Dogs""` が使用されていましたが、現在は角括弧による記法が推奨されています）。
+*   **エスケープ:** 値の中にリテラルのセミコロンを含めるには、バックスラッシュ（`\;`）でエスケープします。
+
+**アクションコードでの操作**
+*   **追加:** `+` または `+=` 演算子を使用します。項目が既にSetに存在する場合、その項目は無視されます。
+    *   例: `$PetTypes=$PetTypes+[dogs];`
+*   **削除:** `-` または `-=` 演算子を使用します。これにより、Setから指定した値が削除されます。
+    *   例: `$PetTypes=$PetTypes-[cats];`
+
+**照会とエクスポート**
+*   **テスト:** `.contains(""value"")` を使用して、特定の個別の値がSet内に存在するかどうかをテストします。これには、リスト項目の完全一致（部分文字列のマッチングではない）が必要です。
+    *   `$PetTypes.contains(""dogs"")` は、""dogs""がセットに含まれている場合に `true` を返します。
+    *   `$PetTypes.contains(""dog"")` は `false` を返します。
+*   **大文字小文字の区別なし:** 大文字小文字を区別しないマッチングには `.icontains()` を使用します。
+*   **エクスポート:** `.format()` または `format()` を使用して、エクスポート用にSetを書式設定された文字列（HTMLリストなど）に変換します。"
+String-Type Attributes,"String A sequence of characters, most often as words and sentences. If no default value is specified, a String type defaults to an empty string. Strings are not delimited (i.e. quotes are not required). The set and action data types effectively special forms of the string data type. Default/Empty value An empty string. Sorting order Ascending order using literal string value in lexical sort order. String-type System Attributes Built-in attributes of the string data type are listed below: String-type System Attributes set via Document Settings A number of Document Settings controls set the defaults for String-type system attributes, directly or indirectly: * Text tab: ** $TextAlign. (Deprecated) * Maps tab: ** $Fill. ** $MapBackgroundPattern.","文字列
+文字の並びであり、多くの場合、単語や文章として扱われます。デフォルト値が指定されていない場合、String型はデフォルトで空の文字列になります。文字列はデリミタで区切られません（つまり、引用符は不要です）。Set型とAction型は、実質的にString型の特殊な形式です。
+
+デフォルト／空の値
+空の文字列。
+
+並べ替え順序
+リテラル文字列値を使用した辞書順での昇順。
+
+String型のシステム属性
+String型の組み込み属性を以下に示します。
+
+ドキュメント設定で設定されるString型のシステム属性
+多くのドキュメント設定（Document Settings）のコントロールが、直接的または間接的にString型のシステム属性のデフォルトを設定します。
+* Textタブ: ** $TextAlign（非推奨）
+* Mapsタブ: ** $Fill、** $MapBackgroundPattern"
+URL-Type Attributes,"URL A URL string. If no default value is specified, a URL type defaults to an empty string. URLs are not delimited (i.e. quotes are not required). URL attributes behave like string attributes. When displayed in a note's displayed attributes table, URL-type attributes show a globe icon before the attribute value. Pressing the icon opens that attribute's stored URL (if any) in the default web browser. Links dropped on a URL-type Displayed Attribute populate that attribute; links dropped on any other data type Displayed Attributes populate the system $URL. If using a local path to a file, e.g. to enable AutoFetch use, you must use the file:// protocol rather than a bare file path. Default/Empty value An empty string. Sorting order As for String Data Type. URL-type System Attributes Built-in attributes of the URL data type are listed below:","URL：URL文字列。デフォルト値が指定されていない場合、URL型のデフォルトは空の文字列になります。URLは区切り文字（引用符など）を必要としません。URL属性は文字列属性と同様に動作します。ノートの表示属性（Displayed Attributes）テーブルに表示される際、URL型の属性には値の前に地球儀のアイコンが表示されます。このアイコンをクリックすると、属性に格納されているURL（存在する場合）がデフォルトのウェブブラウザで開きます。URL型の表示属性にドロップされたリンクはその属性の値を設定します。他のデータ型の表示属性にドロップされたリンクは、システム属性の $URL に設定されます。AutoFetchを利用するためにローカルファイルへのパスを使用する場合などは、直接のファイルパスではなく file:// プロトコルを使用する必要があります。
+
+デフォルト値/空の値：空の文字列。
+ソート順：文字列（String）型と同様。
+URL型システム属性：URLデータ型の組み込み属性を以下に示します。"

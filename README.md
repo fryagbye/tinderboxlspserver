@@ -45,6 +45,11 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 ## Release Notes
 
+### 0.1.3
+- Feature: Type-aware Dot Completion (filters based on scoped types).
+- Fix: Attributes excluded from dot completion suggestions.
+- Fix: Expanded Operator Scope logic (IsDotOp/OpScope).
+
 ### 0.1.2
 - Fix: CSV parsing issues (TextJa display, $Name hover).
 - Doc: Updated license attribution.

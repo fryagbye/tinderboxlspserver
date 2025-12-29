@@ -2,6 +2,15 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.3] - 2025-12-29
+### Added
+- Feature: Type-aware dot completion suggestions based on inferred variable types.
+
+### Fixed
+- Dot Completion: Attributes are no longer incorrectly suggested after a dot operator.
+- Server: Improved CSV parsing logic for `OpScope` and `IsDotOp`.
+- Validation: Fixed issue with global variable scoping and syntax errors in server code.
+
 ## [0.1.2] - 2025-12-29
 ### Fixed
 - CSV Parsing: Fixed issue where "TextJa" was displayed as description.

@@ -13,7 +13,9 @@ import {
     TextDocumentSyncKind,
     InitializeResult,
     SemanticTokensParams,
-    InsertTextFormat
+    InsertTextFormat,
+    Hover,
+    Range
 } from 'vscode-languageserver/node';
 
 import {
@@ -67,7 +69,8 @@ try {
                 textDocumentSync: TextDocumentSyncKind.Incremental,
                 // Tell the client that this server supports code completion.
                 completionProvider: {
-                    resolveProvider: true
+                    resolveProvider: true,
+                    triggerCharacters: ['.', ':'] // Trigger on dot for methods, colon for types
                 },
                 // Semantic Tokens capability
                 semanticTokensProvider: {
@@ -338,7 +341,7 @@ try {
             const attr = systemAttributes.get(varName);
 
             if (attr) {
-                const inferredType = inferType(rhs);
+                const inferredType = evaluateExpressionType(rhs);
                 if (inferredType && !isCompatible(attr.type, inferredType)) {
                     const diagnostic: Diagnostic = {
                         severity: DiagnosticSeverity.Warning,
@@ -385,7 +388,7 @@ try {
             localVars.set(varName, typeDecl);
 
             if (rhs) {
-                const inferredType = inferType(rhs);
+                const inferredType = evaluateExpressionType(rhs, localVars);
                 // Declared type might be "num", "string". Normalize?
                 // Action code uses "number", "string", "boolean", "color", "date", "set", "list" usually.
                 // Or shorthand?
@@ -418,7 +421,7 @@ try {
             if (localVars.has(varName)) {
                 const declaredType = localVars.get(varName);
                 if (declaredType) {
-                    const inferredType = inferType(rhs);
+                    const inferredType = evaluateExpressionType(rhs, localVars);
                     if (inferredType && !isCompatible(declaredType, inferredType)) {
                         const diagnostic: Diagnostic = {
                             severity: DiagnosticSeverity.Warning,
@@ -438,23 +441,137 @@ try {
         connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
     }
 
-    function inferType(value: string): string | null {
-        if (/^".*"$/.test(value) || /^'.*'$/.test(value)) return 'string';
-        if (/^(true|false)$/i.test(value)) return 'boolean';
-        if (/^-?\d+(\.\d+)?$/.test(value)) return 'number';
-        // Simple Color detection? #000000
-        if (/^#[0-9a-fA-F]{6}$/.test(value)) return 'color';
-        return null; // Unknown/Expression
+    // --- Helper for Type Inference ---
+    function recursiveInferType(text: string, document: TextDocument, offset: number): string | null {
+        // Look backwards from offset
+        const content = document.getText();
+        const before = content.slice(0, offset).trimEnd();
+
+        // 1. Check for method call at end: e.g. .reverse()
+        // We match parentheses balanced? No, regex is hard.
+        // Simple heuristic: ".methodName("
+        const methodMatch = before.match(/\.([a-zA-Z0-9_]+)\s*\([^)]*\)$/);
+        // Note: this regex is simplistic and won't handle nested parens well.
+        // For accurate chaining, we might need a better parser or step backwards token by token.
+        // Let's try a simpler approach: match the immediate preceding token.
+
+        // Better Approach: extract the chain.
+        // Find the start of the expression ending at offset.
+        // e.g. "$MyList.sort.reverse" (cursor after reverse)
+        // or "$MyList.sort().reverse"
+
+        // Let's rely on valid identifier chars and dots and parens.
+        // Traverse backwards until we hit a terminator (space, ;, {, etc)
+        let i = offset - 1;
+        let depth = 0;
+        while (i >= 0) {
+            const char = content[i];
+            if (char === ')') depth++;
+            else if (char === '(') depth--;
+            else if (depth === 0 && /[;{}\s=]/.test(char)) {
+                break;
+            }
+            i--;
+        }
+        const expr = content.slice(i + 1, offset).trim();
+
+        if (!expr) return null;
+
+        // Gather locals to help inference
+        const locals = new Map<string, string>();
+        const varRegex = /var(?::([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)/g;
+        let m;
+        // Scan broad content for vars (simple file scope assumption)
+        while ((m = varRegex.exec(content))) {
+            if (m[1] && m[2]) {
+                locals.set(m[2], m[1].toLowerCase());
+            }
+        }
+
+        return evaluateExpressionType(expr, locals);
+    }
+
+    // --- Helper to evaluate expression type ---
+    function evaluateExpressionType(expr: string, locals?: Map<string, string>): string | null {
+        expr = expr.trim();
+        // 1. Literal Strings
+        if (/^".*"$/.test(expr) || /^'.*'$/.test(expr)) return 'string';
+        // 2. Literal Numbers
+        if (/^-?\d+(\.\d+)?$/.test(expr)) return 'number'; // Added -? for negative numbers
+        // 3. Literal Booleans
+        if (/^(true|false)$/i.test(expr)) return 'boolean'; // Added from original inferType
+        // 4. Literal Colors
+        if (/^#[0-9a-fA-F]{6}$/.test(expr)) return 'color'; // Added from original inferType
+        // 5. Literal Lists
+        if (/^\[.*\]$/.test(expr)) return 'list';
+        // 6. Literal Sets (simple check)
+        if (/^\{.*\}$/.test(expr)) return 'set'; // Added from original evaluateExpressionType
+
+        // 7. Variables
+        if (/^[a-zA-Z0-9_]+$/.test(expr)) {
+            if (locals && locals.has(expr)) return locals.get(expr)!;
+            // Try global attributes if it matches? No, variables are usually discrete.
+        }
+
+        // 8. System Attributes
+        if (expr.startsWith('$')) {
+            const parts = expr.split('.');
+            // Simple attribute reference
+            if (parts.length === 1) {
+                const attr = systemAttributes.get(expr);
+                return attr ? attr.type.toLowerCase() : null;
+            }
+        }
+
+        // 9. Dot Chains: something.method() or $Attr.method
+        // We find the last dot that is NOT inside parentheses
+        let parenDepth = 0;
+        let lastDotIndex = -1;
+        for (let j = expr.length - 1; j >= 0; j--) {
+            if (expr[j] === ')') parenDepth++;
+            else if (expr[j] === '(') parenDepth--;
+            else if (expr[j] === '.' && parenDepth === 0) {
+                lastDotIndex = j;
+                break;
+            }
+        }
+
+        if (lastDotIndex > 0) {
+            const left = expr.substring(0, lastDotIndex);
+            const right = expr.substring(lastDotIndex + 1); // methodName or methodName(...)
+
+            const leftType = evaluateExpressionType(left, locals);
+
+            if (leftType) {
+                const methodName = right.replace(/\(.*\)$/, '').trim();
+                // Look up method on leftType
+                const methods = typeMethods.get(leftType.toLowerCase());
+                if (methods) {
+                    const op = methods.find(m => {
+                        const suffix = m.name.split('.').pop();
+                        return suffix === methodName;
+                    });
+                    // Return type from CSV is often capitalized "List", "String" -> convert to lowercase
+                    if (op && op.returnType) {
+                        return op.returnType.toLowerCase();
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     function isCompatible(targetType: string, valueType: string): boolean {
         const normTarget = targetType.toLowerCase();
         const normValue = valueType.toLowerCase();
 
-        if (normTarget === 'string') return normValue === 'string'; // String accepts mostly string, maybe numbers convert automatically in TB? Enforce strict? User said "Proposal OK" which implied strict warning.
-        if (normTarget === 'number' || normTarget === 'num') return normValue === 'number';
-        if (normTarget === 'boolean' || normTarget === 'bool') return normValue === 'boolean';
-        if (normTarget === 'color') return normValue === 'color' || normValue === 'string'; // Colors are often strings?
+        if (normTarget === 'string' && normValue === 'string') return true;
+        if (normTarget === 'number' && normValue === 'number') return true;
+        if (normTarget === 'boolean' && normValue === 'boolean') return true;
+        if (normTarget === 'color' && (normValue === 'color' || normValue === 'string')) return true; // Colors are often strings?
+        if (normTarget === 'list' && (normValue === 'list' || normValue === 'set')) return true;
+        if (normTarget === 'set' && (normValue === 'list' || normValue === 'set')) return true;
 
         // Loose compatibility for others or unknown types
         return true;
@@ -469,13 +586,31 @@ try {
     // --- Variables ---
     interface TinderboxOperator {
         name: string;
+        type: string; // OpType
+        returnType: string; // OpReturnType
+        isDotOp: boolean;
+        opScope: string;
         signature: string;
-        type: string;
-        returnType: string;
         description: string;
         descriptionJa?: string;
-        isDotOp: boolean;
         kind: CompletionItemKind;
+    }
+
+    const tinderboxOperators = new Map<string, TinderboxOperator>();
+    const typeMethods = new Map<string, TinderboxOperator[]>(); // Map<lowercasedType, operators[]>
+    const dotOperatorsMap = new Map<string, TinderboxOperator[]>(); // Map<suffix, operator[]> for fallback
+    const operatorFamilies = new Map<string, string[]>(); // Map<FamilyName, members[]>
+
+    // Helper to add operator to typeMethods map
+    function addOpToType(type: string, op: TinderboxOperator) {
+        if (!typeMethods.has(type)) {
+            typeMethods.set(type, []);
+        }
+        // Prevent duplicates
+        const methods = typeMethods.get(type)!;
+        if (!methods.includes(op)) {
+            methods.push(op);
+        }
     }
 
     interface SystemAttribute {
@@ -488,10 +623,17 @@ try {
         descriptionJa?: string;
     }
 
-    const tinderboxOperators: Map<string, TinderboxOperator> = new Map();
+    interface DataType {
+        name: string;
+        description: string;
+        descriptionJa?: string;
+    }
+
+
     const lowerCaseOperators: Map<string, string> = new Map(); // Case-insensitive lookup
-    const operatorFamilies: Map<string, string[]> = new Map();
+
     const systemAttributes: Map<string, SystemAttribute> = new Map();
+    const tinderboxDataTypes: Map<string, DataType> = new Map();
     // keywordNames is used for fast lookup in semantic tokens
     const keywordNames: Set<string> = new Set();
     // Reserved words for validation
@@ -551,51 +693,97 @@ try {
 
         if (opCsvContent) {
             const rows = parseCSV(opCsvContent);
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 24) continue;
-                const firstCol = row[0].trim().replace(/^"|"$/g, '');
-                // Check if it's the header row (Name, OpClass, ...)
-                if (firstCol.toLowerCase() === 'name' && row[1].trim() === 'OpClass') continue;
-                if (firstCol.startsWith('#')) continue;
+            // Migrated logic:
 
-                let name = firstCol;
-                let label = name;
-                const parenIndex = name.indexOf('(');
-                if (parenIndex > 0) label = name.substring(0, parenIndex).trim();
+            let successCount = 0;
+            rows.forEach((row, index) => {
+                if (index === 0) return; // Skip header
+                if (row.length >= 5) {
+                    const label = row[0].trim();
+                    // Fix: Skip empty labels or comments (if any)
+                    if (!label || label.startsWith('#')) return;
 
-                const dotIndex = label.indexOf('.');
-                if (dotIndex > 0) {
-                    const family = label.substring(0, dotIndex);
-                    const member = label.substring(dotIndex + 1);
-                    if (!operatorFamilies.has(family)) operatorFamilies.set(family, []);
-                    if (!operatorFamilies.get(family)?.includes(member)) operatorFamilies.get(family)?.push(member);
-                    // Add family to keywords so it highlights
-                    keywordNames.add(family);
+                    const isDotOp = row[13]?.toLowerCase() === 'true';
+                    const opScope = row[2]?.trim() || 'Item';
+
+                    const op: TinderboxOperator = {
+                        name: label,
+                        type: row[3], // OpType
+                        returnType: row[4], // OpReturnType
+                        isDotOp: isDotOp,
+                        opScope: opScope,
+                        signature: label + (row[11] && parseInt(row[11]) > 0 ? '(...)' : ''), // Simple signature approximation
+                        description: row[23] || '',
+                        descriptionJa: row[24],
+                        kind: CompletionItemKind.Function // Default
+                    };
+
+                    // Refine Kind
+                    if (op.type.toLowerCase().includes('cond')) {
+                        op.kind = CompletionItemKind.Keyword;
+                    }
+
+                    tinderboxOperators.set(label, op);
+
+                    // Populate typeMethods based on OpScope matching
+                    if (isDotOp) {
+                        const scope = opScope.toLowerCase();
+
+                        // Rules for Scope -> Types
+                        if (scope === 'item') {
+                            // "Item" applies to almost all types
+                            ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
+                        } else if (scope === 'list') {
+                            addOpToType('list', op);
+                            addOpToType('set', op);
+                        } else if (scope === 'set') {
+                            addOpToType('set', op);
+                            addOpToType('list', op); // Assuming Set methods often work on Lists too or vice versa? User said "List- or Set-type" usually implies both.
+                        } else {
+                            // Direct mapping: "String", "Number", "Color" etc.
+                            addOpToType(scope, op);
+                        }
+
+                        // Also populate dotOperatorsMap (Suffix based) for hover fallback
+                        // We extract suffix after LAST dot
+                        const dotIdx = label.lastIndexOf('.');
+                        if (dotIdx > 0) {
+                            const suffix = label.substring(dotIdx + 1);
+                            if (suffix) {
+                                if (!dotOperatorsMap.has(suffix)) {
+                                    dotOperatorsMap.set(suffix, []); // Initialized as array
+                                }
+                                dotOperatorsMap.get(suffix)?.push(op);
+                            }
+                        } else {
+                            // No dot in name (e.g. "lowercase"), but matches IsDotOp=true
+                            // Treat whole name as suffix?
+                            if (!dotOperatorsMap.has(label)) {
+                                dotOperatorsMap.set(label, []);
+                            }
+                            dotOperatorsMap.get(label)?.push(op);
+                        }
+                    }
+
+                    // OpFamily logic (independent of IsDotOp, usually for static access like Color.blue)
+                    const dotIdx = label.indexOf('.');
+                    if (dotIdx > 0 && !label.includes(' ')) {
+                        const familyName = label.substring(0, dotIdx);
+                        if (!operatorFamilies.has(familyName)) {
+                            operatorFamilies.set(familyName, []);
+                        }
+                        // Avoid duplicates
+                        const member = label.substring(dotIdx + 1);
+                        if (!operatorFamilies.get(familyName)?.includes(member)) {
+                            operatorFamilies.get(familyName)?.push(member);
+                        }
+                    }
+
+                    successCount++;
                 }
+            });
+            connection.console.log(`Loaded ${successCount} operators.`);
 
-                let kind: CompletionItemKind = CompletionItemKind.Function;
-                if (label.startsWith('$')) kind = CompletionItemKind.Variable;
-                else if (row[3] === 'Property') kind = CompletionItemKind.Property;
-                // TS might think explicit number assignment is invalid for enum depending on settings, 
-                // but CompletionItemKind.Method should be fine.
-                else if (dotIndex > 0) kind = CompletionItemKind.Method;
-
-                const op: TinderboxOperator = {
-                    name: label,
-                    signature: name,
-                    type: row[3],
-                    returnType: row[4],
-                    description: row[23].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n'),
-                    descriptionJa: row[24] ? row[24].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined,
-                    isDotOp: row[13].toLowerCase() === 'true',
-                    kind: kind
-                };
-
-                tinderboxOperators.set(label, op);
-                lowerCaseOperators.set(label.toLowerCase(), label); // For case checking
-                keywordNames.add(label);
-            }
             connection.console.log(`Loaded ${tinderboxOperators.size} operators from CSV.`);
 
             // Add operators to reserved words
@@ -694,7 +882,7 @@ try {
                     defaultValue: row[2],
                     readOnly: row[6].toLowerCase() === 'true',
                     description: row[17] ? row[17].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n') : '',
-                    descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
                 };
                 systemAttributes.set(name, attr);
                 keywordNames.add(name); // Add to semantic tokens list
@@ -702,9 +890,42 @@ try {
             connection.console.log(`Loaded ${systemAttributes.size} system attributes.`);
         }
 
+        // --- Load Data Types ---
+        const typesPath = path.join(__dirname, '..', '..', '..', 'data_types_v2.csv');
+        let typesContent = '';
+        if (fs.existsSync(typesPath)) {
+            typesContent = fs.readFileSync(typesPath, 'utf-8');
+        } else if (fs.existsSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv')) {
+            typesContent = fs.readFileSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv', 'utf-8');
+        } else {
+            connection.console.warn('Could not find data_types_v2.csv');
+        }
+
+        if (typesContent) {
+            const rows = parseCSV(typesContent);
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 3) continue;
+                const rawName = row[0].trim().replace(/^"|"$/g, '');
+                // Name format: "Action-Type Attributes" -> "action"
+                const typeKey = rawName.split('-')[0].toLowerCase();
+
+                const dataType: DataType = {
+                    name: rawName,
+                    description: row[1].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n'),
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                };
+                tinderboxDataTypes.set(typeKey, dataType);
+                // Handle "boolean" explicit overlap if needed, but key is safe
+            }
+            connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
+        }
+
     } catch (err: any) {
         connection.console.error(`Failed to load data: ${err.message}`);
     }
+
+
 
     // --- Completion Handler ---
     connection.onCompletion(
@@ -717,11 +938,67 @@ try {
 
             if (content && document) {
                 const offset = document.offsetAt(textDocumentPosition.position);
-                const textBefore = content.slice(0, offset);
-                // Check if we are potentially after a dot: e.g. "Color."
-                const dotMatch = textBefore.match(/([a-zA-Z0-9_$]+)\.$/);
+                const textBefore = content.slice(0, offset).trimEnd();
+
+                // Detect Dot Completion: e.g. "$Name." or "$Name.re"
+                // 1. Immediate dot: ends with .
+                // 2. Partial method: ends with .ident
+                const dotMatch = textBefore.match(/([$a-zA-Z0-9_.)\]]+)\.([a-zA-Z0-9_]*)$/);
+
                 if (dotMatch) {
-                    triggerPrefix = dotMatch[1];
+                    const receiver = dotMatch[1]; // e.g. "vList", "Color", "$Name"
+                    const partial = dotMatch[2];  // e.g. "so", ""
+                    let type: string | null = null;
+
+                    // 1. System Attribute
+                    if (receiver.startsWith('$')) {
+                        const attr = systemAttributes.get(receiver);
+                        if (attr) type = attr.type;
+                    }
+                    // 2. Class/Group (e.g. Color.blue)
+                    else if (operatorFamilies.has(receiver)) {
+                        triggerPrefix = receiver; // Fallback to existing logic for families
+                    }
+                    else {
+                        // 3. Local Variable
+                        const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${receiver}\\b`, 'g');
+                        let mVar;
+                        varRegex.lastIndex = 0;
+                        while ((mVar = varRegex.exec(content))) {
+                            type = mVar[1];
+                        }
+
+                        // 4. Recursive Inference (Chaining)
+                        if (!type) {
+                            // Pass position of the dot to infer what comes before it
+                            const dotIndex = textBefore.lastIndexOf('.');
+                            type = recursiveInferType(content, document, dotIndex);
+                        }
+                    }
+
+                    if (type) {
+                        const methods = typeMethods.get(type.toLowerCase());
+                        if (methods) {
+                            return methods
+                                .filter(op => {
+                                    const suffix = op.name.split('.').pop() || op.name;
+                                    return suffix.toLowerCase().startsWith(partial.toLowerCase());
+                                })
+                                .map(op => {
+                                    const suffix = op.name.split('.').pop() || op.name;
+                                    const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                    return {
+                                        label: suffix,
+                                        kind: CompletionItemKind.Method,
+                                        detail: op.signature,
+                                        documentation: { kind: 'markdown', value: `**${op.name}**\n\n${desc}` },
+                                        insertText: `${suffix}($0)`,
+                                        insertTextFormat: InsertTextFormat.Snippet,
+                                        data: { type: 'operator', key: op.name, language: lang }
+                                    };
+                                });
+                        }
+                    }
                 }
             }
 
@@ -858,7 +1135,18 @@ try {
                 });
             }
 
+            // --- NEW: Data Types (Lowercase) ---
+            for (const [typeKey, dataType] of tinderboxDataTypes) {
+                completions.push({
+                    label: typeKey, // "string", "number", etc.
+                    kind: CompletionItemKind.TypeParameter,
+                    detail: dataType.name, // "String-Type Attributes"
+                    data: { type: 'datatype', key: typeKey, language: lang }
+                });
+            }
+
             return completions.concat(attrCompletions);
+
         }
     );
 
@@ -884,6 +1172,15 @@ try {
                     item.documentation = {
                         kind: 'markdown',
                         value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n*Read Only*: ${attr.readOnly}\n\n${desc}`
+                    };
+                }
+            } else if (data.type === 'datatype') {
+                const dt = tinderboxDataTypes.get(data.key);
+                if (dt) {
+                    const desc = (lang === 'ja' && dt.descriptionJa) ? dt.descriptionJa : dt.description;
+                    item.documentation = {
+                        kind: 'markdown',
+                        value: `**${dt.name}**\n\n${desc}`
                     };
                 }
             }
@@ -1005,6 +1302,19 @@ try {
                         }
                     }
                     builder.push(startPos.line, startPos.character, length, typeIdx, 0);
+                } else if (word.includes('.') && !word.startsWith('$')) {
+                    // Check for Dot Operators (suffix match)
+                    // e.g. vStr.show  -> "show"
+                    const lastDot = word.lastIndexOf('.');
+                    if (lastDot >= 0 && lastDot < word.length - 1) {
+                        const suffix = word.substring(lastDot + 1);
+                        if (dotOperatorsMap.has(suffix)) {
+                            // Highlight the suffix as a function/method
+                            // Suffix start relative to token start: lastDot + 1
+                            builder.push(startPos.line, startPos.character + lastDot + 1, suffix.length, tokenTypes.indexOf('function'), 0);
+                        }
+                    }
+                    prevTokenWasFunctionKeyword = false;
                 } else {
                     prevTokenWasFunctionKeyword = false;
                 }
@@ -1014,96 +1324,185 @@ try {
     });
 
     // --- Hover Handler ---
-    connection.onHover(async (params) => {
-        const doc = documents.get(params.textDocument.uri);
-        if (!doc) return null;
-        const settings = await getDocumentSettings(params.textDocument.uri);
-        const lang = settings.language;
-        const offset = doc.offsetAt(params.position);
-        const text = doc.getText();
+    connection.onHover(
+        (textDocumentPosition: TextDocumentPositionParams): Hover | null => {
+            const document = documents.get(textDocumentPosition.textDocument.uri);
+            if (!document) return null;
+            const settings = { language: 'en' }; // Placeholder, ideally async getDocumentSettings
+            const lang = settings.language;
 
-        const left = text.slice(0, offset).search(/[$a-zA-Z0-9_.]+$/);
-        const right = text.slice(offset).search(/[^$a-zA-Z0-9_.]/);
+            const offset = document.offsetAt(textDocumentPosition.position);
+            const content = document.getText();
 
-        const start = left >= 0 ? left : offset;
-        const end = right >= 0 ? offset + right : text.length;
+            // Find the word/expression under the cursor
+            // This regex captures identifiers, system attributes, and dot-chained expressions
+            const wordPattern = /([$a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+(?:\([^)]*\))?)*)/g;
+            let match;
+            let hoveredWord = '';
+            let hoveredRange: Range | undefined;
 
-        const word = text.substring(start, end);
+            while ((match = wordPattern.exec(content)) !== null) {
+                const startOffset = match.index;
+                const endOffset = match.index + match[0].length;
 
-        const op = tinderboxOperators.get(word);
-        const attr = systemAttributes.get(word);
+                if (offset >= startOffset && offset <= endOffset) {
+                    // Check if we are hovering a specific part of a chain
+                    // e.g. "vList.reverse()" -> hovering "reverse"
+                    // The regex captures the whole chain "vList.reverse()"
+                    // We need to narrow down to the clicked segment.
 
-        if (op) {
-            const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
-            return {
-                contents: {
-                    kind: 'markdown',
-                    value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
-                }
-            };
-        } else if (attr) {
-            const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
-            return {
-                contents: {
-                    kind: 'markdown',
-                    value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n*Read Only*: ${attr.readOnly}\n\n${desc}`
-                }
-            };
-        }
+                    const chain = match[0];
+                    // Find which segment offset falls into
+                    let currentSegStart = startOffset;
+                    const segments = chain.split('.'); // This splits identifiers. "vList.reverse()" -> "vList", "reverse()"
 
-        // --- Fallback: Local Variables & Arguments ---
-        const textBefore = text.slice(0, offset);
+                    for (let i = 0; i < segments.length; i++) {
+                        const seg = segments[i];
+                        const segLen = seg.length;
+                        const segEnd = currentSegStart + segLen;
 
-        // 1. Local Variables: var:Type Name
-        // Regex to find "var:Type Name" (Last occurrence wins)
-        // Matches: var:String myStr
-        const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${word}\\b`, 'g');
-        let mVar;
-        let foundVarType = null;
-        while ((mVar = varRegex.exec(textBefore))) {
-            foundVarType = mVar[1];
-        }
+                        if (offset >= currentSegStart && offset <= segEnd) {
+                            hoveredWord = seg.replace(/\(.*\)$/, ''); // "reverse"
+                            // If it's not the first segment (variable), we need the prefix chain to infer type
+                            // e.g. prefix = "vList"
+                            if (i > 0) {
+                                const prefix = chain.substring(0, chain.indexOf(seg, 0)); // simple prefix for now
+                                // "vList.sort().reverse" -> prefix "vList.sort()."
+                                // Wait, reconstructing prefix from segments is safer.
+                                const prefixExpr = segments.slice(0, i).join('.');
+                                const inferredType = evaluateExpressionType(prefixExpr, (() => {
+                                    const vars = new Map<string, string>();
+                                    const varRegex = /var(?::([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)/g;
+                                    let m;
+                                    while ((m = varRegex.exec(content))) {
+                                        if (m[1] && m[2]) vars.set(m[2], m[1].toLowerCase());
+                                    }
+                                    return vars;
+                                })());
 
-        if (foundVarType) {
-            return {
-                contents: {
-                    kind: 'markdown',
-                    value: `**${word}**\n\n*Variable*\n*Type*: ${foundVarType}`
-                }
-            };
-        }
-
-        // 2. Function Arguments: function Name(arg:Type)
-        // Find the last function definition before the cursor (Enclosing function heuristic)
-        const funcRegex = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-        let lastFuncMatch = null;
-        let mFunc;
-        while ((mFunc = funcRegex.exec(textBefore))) {
-            lastFuncMatch = mFunc;
-        }
-
-        if (lastFuncMatch) {
-            const args = lastFuncMatch[2]; // e.g. "a:number, b"
-            const argParts = args.split(',');
-            for (const part of argParts) {
-                const trimmed = part.trim();
-                // Match "Name" or "Name:Type"
-                const argMatch = trimmed.match(/^([a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?$/);
-                if (argMatch) {
-                    const argName = argMatch[1];
-                    const argType = argMatch[2];
-                    if (argName === word && argType) {
-                        return {
-                            contents: {
-                                kind: 'markdown',
-                                value: `**${word}**\n\n*Argument*\n*Type*: ${argType}`
+                                if (inferredType) {
+                                    // Look up method on inferred type
+                                    const methods = typeMethods.get(inferredType.toLowerCase());
+                                    if (methods) {
+                                        const op = methods.find(m => {
+                                            const suffix = m.name.split('.').pop();
+                                            // Hovered word might be "reverse" or "reverse()"
+                                            return suffix === hoveredWord;
+                                        });
+                                        if (op) {
+                                            const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                            return {
+                                                contents: {
+                                                    kind: 'markdown',
+                                                    value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                                                },
+                                                range: {
+                                                    start: document.positionAt(currentSegStart),
+                                                    end: document.positionAt(segEnd)
+                                                }
+                                            };
+                                        }
+                                    }
+                                }
                             }
-                        };
+
+                            // If first segment or inference failed, use basic lookup below
+                            hoveredRange = {
+                                start: document.positionAt(currentSegStart),
+                                end: document.positionAt(segEnd)
+                            };
+                            break;
+                        }
+                        currentSegStart = segEnd + 1; // +1 for dot
+                    }
+                    if (!hoveredWord) hoveredWord = match[0]; // Fallback to whole match if logic fails
+                    break;
+                }
+            }
+
+            if (!hoveredWord || !hoveredRange) {
+                return null;
+            }
+
+            // 1. System Attributes
+            if (hoveredWord.startsWith('$')) {
+                const attr = systemAttributes.get(hoveredWord);
+                if (attr) {
+                    const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
+                    return {
+                        contents: {
+                            kind: 'markdown',
+                            value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n*Read Only*: ${attr.readOnly}\n\n${desc}`
+                        },
+                        range: hoveredRange
+                    };
+                }
+            }
+
+            // 2. Operators / Functions (Standard Lookup for non-chained or simple names)
+            const op = tinderboxOperators.get(hoveredWord);
+            if (op) {
+                const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                return {
+                    contents: {
+                        kind: 'markdown',
+                        value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                    },
+                    range: hoveredRange
+                };
+            }
+            // 3. Fallback: Local Variables
+            // We need textBefore for context
+            const textBefore = content.slice(0, offset);
+            const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${hoveredWord}\\b`, 'g');
+            let mVar;
+            while ((mVar = varRegex.exec(textBefore))) {
+                const foundVarType = mVar[1];
+                if (foundVarType) {
+                    return {
+                        contents: {
+                            kind: 'markdown',
+                            value: `**${hoveredWord}**\n\n*Variable*\n*Type*: ${foundVarType}`
+                        },
+                        range: hoveredRange
+                    };
+                }
+            }
+
+            // 4. Function Arguments: function Name(arg:Type)
+            // Find the last function definition before the cursor (Enclosing function heuristic)
+            const funcRegex = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+            let lastFuncMatch = null;
+            let mFunc;
+            while ((mFunc = funcRegex.exec(textBefore))) {
+                lastFuncMatch = mFunc;
+            }
+
+            if (lastFuncMatch) {
+                const args = lastFuncMatch[2]; // e.g. "a:number, b"
+                const argParts = args.split(',');
+                for (const part of argParts) {
+                    const trimmed = part.trim();
+                    // Match "Name" or "Name:Type"
+                    const argMatch = trimmed.match(/^([a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?$/);
+                    if (argMatch) {
+                        const argName = argMatch[1];
+                        const argType = argMatch[2];
+                        if (argName === hoveredWord && argType) {
+                            return {
+                                contents: {
+                                    kind: 'markdown',
+                                    value: `**${hoveredWord}**\n\n*Argument*\n*Type*: ${argType}`
+                                },
+                                range: hoveredRange
+                            };
+                        }
                     }
                 }
             }
+            return null;
         }
-    });
+    );
 
 
     // --- Signature Help Handler ---
