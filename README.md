@@ -36,6 +36,10 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 | `tinderboxActionCodeServer.maxNumberOfProblems` | Maximum number of problems reported. | `1000` |
 | `tinderboxActionCodeServer.language` | Language for descriptions (`en` or `ja`). | `en` |
 
+## Usage
+- Files with the `.tbxc` extension are automatically recognized as Tinderbox Action Code and will provide full IDE support.
+- If you are working with other file types (like `.txt`), you can manually set the language mode to **Tinderbox Action Code** via the Language Mode selector in the VS Code status bar.
+
 ## Requirements
 - VS Code 1.75.0 or higher.
 
@@ -58,6 +62,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - Fix: Double Insertion (Parens, $).
 - Fix: Global Function Hover.
 
+<details>
+<summary>Earlier Releases</summary>
+
 ### 0.1.3
 - Feature: Type-aware Dot Completion (filters based on scoped types).
 - Fix: Attributes excluded from dot completion suggestions.
@@ -66,6 +73,8 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 0.1.2
 - Fix: CSV parsing issues (TextJa display, $Name hover).
 - Doc: Updated license attribution.
+
+</details>
 
 ## Acknowledgments
 The data used in this extension (reserved word, operators, functions and attributes) is adapted from [A Tinderbox Reference File ('aTbRef')](https://atbref.com/) by Mark Anderson, which is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/). Modifications were made to format the data for this LSP server.
