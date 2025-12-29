@@ -2,6 +2,11 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.6] - 2025-12-29
+### Fixed
+- **Localization**: Fixed improper language loading (Japanese settings were ignored in 0.1.5).
+- **Validation**: Refined "Missing Semicolon" check to avoid false positives on braces on new lines or control flow (if/else).
+
 ## [0.1.5] - 2025-12-29
 ### Fixed
 - **Hover**: Correctly display Data Type description instead of function docs when hovering over type declarations (e.g., `var:string`).

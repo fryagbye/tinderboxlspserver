@@ -225,15 +225,32 @@ try {
                 // If it looks like a statement (alphanumeric or closing paren/quote)
                 // Check if the current line ends with an operator that suggests continuation
                 const endsWithOperator = /[+\-*/|&=]$/.test(trimmed);
-                // Check ahead for next line starting with operator
+                // Check ahead for next line starting with operator OR block
                 let nextLineStartsOperator = false;
+                let nextLineStartsBlock = false;
                 if (i < lines.length - 1) {
                     const nextLine = lines[i + 1].trim();
                     if (/^[\+\-\*\/\.\|&=]/.test(nextLine)) {
                         nextLineStartsOperator = true;
                     }
+                    if (nextLine.startsWith('{')) {
+                        nextLineStartsBlock = true;
+                    }
                 }
-                if (!endsWithOperator && !nextLineStartsOperator && /[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
+                // Skip if:
+                // 1. Ends with operator
+                // 2. Next line starts with operator
+                // 3. Next line starts with { (Block start)
+                // 4. Ends with 'else' (e.g. "} else")
+                // 5. Starts with Control Keyword (if, while, each, for)
+                const isControlStatement = /^(if|while|each|for|function)\b/.test(trimmed);
+                const endsWithElse = /(^|\s)else$/.test(trimmed);
+                if (!endsWithOperator &&
+                    !nextLineStartsOperator &&
+                    !nextLineStartsBlock &&
+                    !isControlStatement &&
+                    !endsWithElse &&
+                    /[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
                     const diagnostic = {
                         severity: node_1.DiagnosticSeverity.Warning,
                         range: {

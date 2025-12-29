@@ -16,7 +16,7 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Operator Details**: Hover over an operator to see its syntax, return type, and description.
 - **Attribute Info**: View descriptions and types for System Attributes.
 - **Bilingual Support**: Toggle between English and Japanese descriptions via `tinderboxActionCodeServer.language`.
-![Hover](https://github.com/fryagbye/tinderboxlspserver/raw/main/images/images/hover.gif)
+![Hover](https://github.com/fryagbye/tinderboxlspserver/raw/main/images/hover.gif)
 
 ### 3. Validation / Diagnostics
 - **Syntax Checking**: Detects unclosed strings and missing semicolons (heuristic-based).
@@ -44,6 +44,10 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
 
 ## Release Notes
+
+### 0.1.6
+- Fix: Localization (Japanese setting now works).
+- Fix: Validation (Smarter semicolon check).
 
 ### 0.1.5
 - Fix: Data Type Hover (shows type info in `var:type`).
