@@ -109,27 +109,25 @@ try {
     });
 
     // The example settings
-    interface ExampleSettings {
+    interface TinderboxSettings {
         maxNumberOfProblems: number;
         language: string;
     }
 
     // The global settings, used when the `workspace/configuration` request is not supported by the client.
-    // Please note that this is not the case when using this server with the client provided in this example
-    // but could happen with other clients.
-    const defaultSettings: ExampleSettings = { maxNumberOfProblems: 1000, language: 'en' };
-    let globalSettings: ExampleSettings = defaultSettings;
+    const defaultSettings: TinderboxSettings = { maxNumberOfProblems: 1000, language: 'en' };
+    let globalSettings: TinderboxSettings = defaultSettings;
 
     // Cache the settings of all open documents
-    const documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
+    const documentSettings: Map<string, Thenable<TinderboxSettings>> = new Map();
 
     connection.onDidChangeConfiguration(change => {
         if (hasConfigurationCapability) {
             // Reset all cached document settings
             documentSettings.clear();
         } else {
-            globalSettings = <ExampleSettings>(
-                (change.settings.languageServerExample || defaultSettings)
+            globalSettings = <TinderboxSettings>(
+                (change.settings.tinderboxActionCodeServer || defaultSettings)
             );
         }
 
@@ -137,7 +135,7 @@ try {
         documents.all().forEach(validateTextDocument);
     });
 
-    function getDocumentSettings(resource: string): Thenable<ExampleSettings> {
+    function getDocumentSettings(resource: string): Thenable<TinderboxSettings> {
         if (!hasConfigurationCapability) {
             return Promise.resolve(globalSettings);
         }
@@ -145,8 +143,8 @@ try {
         if (!result) {
             result = connection.workspace.getConfiguration({
                 scopeUri: resource,
-                section: 'tinderboxActionCodeServer' // Section name must match package.json
-            }) || defaultSettings;
+                section: 'tinderboxActionCodeServer'
+            });
             documentSettings.set(resource, result);
         }
         return result;
@@ -164,11 +162,8 @@ try {
     });
 
     async function validateTextDocument(textDocument: TextDocument): Promise<void> {
-        // connection.console.log(`Validating document: ${textDocument.uri}`);
-        let settings = await getDocumentSettings(textDocument.uri);
-        if (!settings) {
-            settings = defaultSettings; // Fallback
-        }
+        // In this simple example we get the settings for every validate run.
+        const settings = await getDocumentSettings(textDocument.uri);
 
         const text = textDocument.getText();
         const diagnostics: Diagnostic[] = [];
@@ -971,134 +966,117 @@ try {
 
 
 
-    // --- Completion Handler ---
+    // This handler provides the initial list of the completion items.
     connection.onCompletion(
         async (textDocumentPosition: TextDocumentPositionParams): Promise<CompletionItem[]> => {
             const document = documents.get(textDocumentPosition.textDocument.uri);
+            const content = document?.getText();
+
+            if (!document || !content) return [];
+
             const settings = await getDocumentSettings(textDocumentPosition.textDocument.uri);
             const lang = settings.language;
-            const content = document?.getText();
-            let triggerPrefix = '';
             let textBefore = '';
+            let triggerPrefix = ''; // FIX: Restore missing declaration
 
             if (content && document) {
                 const offset = document.offsetAt(textDocumentPosition.position);
                 textBefore = content.slice(0, offset).trimEnd();
+            }
 
-                // Detect Dot Completion: e.g. "$Name." or "$Name.re"
-                // 1. Immediate dot: ends with .
-                // 2. Partial method: ends with .ident
-                // FIX: Update regex to support arguments with quotes, slashes, spaces (e.g. $Name("target"). )
-                const dotMatch = textBefore.match(/([$a-zA-Z0-9_.()\[\]"'/\- ]+)\.([a-zA-Z0-9_]*)$/);
+            // FIX: Update regex to support arguments with quotes, slashes, spaces (e.g. $Name("target"). )
+            const dotMatch = textBefore.match(/([$a-zA-Z0-9_.()\[\]"'/\- ]+)\.([a-zA-Z0-9_]*)$/);
 
-                if (dotMatch) {
-                    const receiver = dotMatch[1]; // e.g. "vList", "Color", "$Name"
-                    const partial = dotMatch[2];  // e.g. "so", ""
-                    let type: string | null = null;
+            if (dotMatch) {
+                const receiver = dotMatch[1]; // e.g. "vList", "Color", "$Name"
+                const partial = dotMatch[2];  // e.g. "so", ""
+                let type: string | null = null;
 
-                    // 1. System Attribute (Direct lookup with potential args)
-                    if (receiver.startsWith('$')) {
-                        // Strip args ($Name("foo") -> $Name)
-                        const bareReceiver = receiver.replace(/\(.*\)$/, '');
-                        const attr = systemAttributes.get(bareReceiver);
-                        if (attr) type = attr.type;
-                    }
-
-                    // 2. Class/Group (e.g. Color.blue)
-                    if (!type && operatorFamilies.has(receiver)) {
-                        triggerPrefix = receiver; // Fallback to existing logic for families
-                    }
-
-                    // 3. Local Variable
-                    if (!type) {
-                        const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${receiver}\\b`, 'g');
-                        let mVar;
-                        varRegex.lastIndex = 0;
-                        while ((mVar = varRegex.exec(content))) {
-                            type = mVar[1];
-                        }
-                    }
-
-                    // 4. Recursive Inference (Chaining)
-                    if (!type) {
-                        // Pass position of the dot to infer what comes before it
-                        const dotIndex = textBefore.lastIndexOf('.');
-                        type = recursiveInferType(content, document, dotIndex);
-                    }
-
-                    if (type) {
-                        const methods = typeMethods.get(type.toLowerCase());
-                        if (methods) {
-                            return methods
-                                .filter(op => {
-                                    const suffix = op.name.split('.').pop() || op.name;
-                                    return suffix.toLowerCase().startsWith(partial.toLowerCase());
-                                })
-                                .map(op => {
-                                    const suffix = op.name.split('.').pop() || op.name;
-                                    const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
-                                    // Strip () AND (args) from suffix/name before appending our own snippet parens
-                                    // "lowercase()" -> "lowercase", "sort(attrs)" -> "sort"
-                                    const cleanSuffix = suffix.replace(/\(.*\)$/, '');
-                                    return {
-                                        label: suffix,
-                                        kind: CompletionItemKind.Method,
-                                        detail: op.signature,
-                                        documentation: { kind: 'markdown', value: `**${op.name}**\n\n${desc}` },
-                                        insertText: `${cleanSuffix}($0)`, // Always empty parens with cursor inside
-                                        insertTextFormat: InsertTextFormat.Snippet,
-                                        data: { type: 'operator', key: op.name, language: lang }
-                                    };
-                                });
-                        }
-
-                    }
-
-                    // 5. Operator Families (e.g. Color.blue)
-                    if (triggerPrefix && operatorFamilies.has(triggerPrefix)) {
-                        const members = operatorFamilies.get(triggerPrefix) || [];
-                        return members.map((mem) => {
-                            const fullName = triggerPrefix + '.' + mem;
-                            const op = tinderboxOperators.get(fullName);
-                            const isFunc = op && (op.kind === CompletionItemKind.Function || op.kind === CompletionItemKind.Method);
-                            const desc = (lang === 'ja' && op?.descriptionJa) ? op.descriptionJa : op?.description;
-                            return {
-                                label: mem,
-                                kind: op ? op.kind : CompletionItemKind.Method,
-                                detail: op ? op.signature : fullName,
-                                documentation: desc ? { kind: 'markdown', value: desc } : undefined,
-                                insertText: isFunc ? `${mem}($0)` : mem,
-                                insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
-                                data: { type: 'operator', key: fullName, language: lang }
-                            };
-                        });
-                    }
-
-                    // STRICT RETURN for Dot Completion
-                    // If we found a dot, we MUST return something related to it (or nothing).
-                    // We must NOT fall through to the global list (which includes attributes).
-                    return [];
+                // 1. System Attribute (Direct lookup with potential args)
+                if (receiver.startsWith('$')) {
+                    // Strip args ($Name("foo") -> $Name)
+                    const bareReceiver = receiver.replace(/\(.*\)$/, '');
+                    const attr = systemAttributes.get(bareReceiver);
+                    if (attr) type = attr.type;
                 }
-            }
 
-            if (triggerPrefix && operatorFamilies.has(triggerPrefix)) {
-                const members = operatorFamilies.get(triggerPrefix) || [];
-                return members.map((mem) => {
-                    const fullName = triggerPrefix + '.' + mem;
-                    const op = tinderboxOperators.get(fullName);
-                    const isFunc = op && (op.kind === CompletionItemKind.Function || op.kind === CompletionItemKind.Method);
-                    const desc = (lang === 'ja' && op?.descriptionJa) ? op.descriptionJa : op?.description;
-                    return {
-                        label: mem,
-                        kind: op ? op.kind : CompletionItemKind.Method,
-                        detail: op ? op.signature : fullName,
-                        documentation: desc ? { kind: 'markdown', value: desc } : undefined,
-                        insertText: isFunc ? `${mem}($0)` : mem,
-                        insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
-                        data: { type: 'operator', key: fullName, language: lang }
-                    };
-                });
+                // 2. Class/Group (e.g. Color.blue)
+                if (!type && operatorFamilies.has(receiver)) {
+                    triggerPrefix = receiver; // Fallback to existing logic for families
+                }
+
+                // 3. Local Variable
+                if (!type) {
+                    const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${receiver}\\b`, 'g');
+                    let mVar;
+                    varRegex.lastIndex = 0;
+                    while ((mVar = varRegex.exec(content))) {
+                        type = mVar[1];
+                    }
+                }
+
+                // 4. Recursive Inference (Chaining)
+                if (!type) {
+                    // Pass position of the dot to infer what comes before it
+                    const dotIndex = textBefore.lastIndexOf('.');
+                    type = recursiveInferType(content, document, dotIndex);
+                }
+
+                if (type) {
+                    const methods = typeMethods.get(type.toLowerCase());
+                    if (methods) {
+                        return methods
+                            .filter(op => {
+                                const suffix = op.name.split('.').pop() || op.name;
+                                return suffix.toLowerCase().startsWith(partial.toLowerCase());
+                            })
+                            .map(op => {
+                                const suffix = op.name.split('.').pop() || op.name;
+                                const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                // Strip () AND (args) from suffix/name before appending our own snippet parens
+                                // "lowercase()" -> "lowercase", "sort(attrs)" -> "sort"
+                                const cleanSuffix = suffix.replace(/\(.*\)$/, '');
+                                return {
+                                    label: suffix,
+                                    kind: CompletionItemKind.Method,
+                                    detail: op.signature,
+                                    documentation: { kind: 'markdown', value: `**${op.name}**\n\n${desc}` },
+                                    insertText: `${cleanSuffix}($0)`, // Always empty parens with cursor inside
+                                    insertTextFormat: InsertTextFormat.Snippet,
+                                    data: { type: 'operator', key: op.name, language: lang }
+                                };
+                            });
+                    }
+
+                }
+
+                // 5. Operator Families (e.g. Color.blue)
+                if (triggerPrefix && operatorFamilies.has(triggerPrefix)) {
+                    const members = operatorFamilies.get(triggerPrefix) || [];
+                    return members.map((mem) => {
+                        const fullName = triggerPrefix + '.' + mem;
+                        const op = tinderboxOperators.get(fullName);
+                        const isFunc = op && (op.kind === CompletionItemKind.Function || op.kind === CompletionItemKind.Method);
+                        const desc = (lang === 'ja' && op?.descriptionJa) ? op.descriptionJa : op?.description;
+                        return {
+                            label: mem,
+                            kind: op ? op.kind : CompletionItemKind.Method,
+                            detail: op ? op.signature : fullName,
+                            documentation: desc ? { kind: 'markdown', value: desc } : undefined,
+                            insertText: isFunc ? `${mem}($0)` : mem,
+                            insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
+                            data: { type: 'operator', key: fullName, language: lang }
+                        };
+                    });
+                }
+
+                // STRICT RETURN for Dot Completion
+                // If we found a dot, we MUST return something related to it (or nothing).
+                // We must NOT fall through to the global list (which includes attributes).
+                return [];
             }
+            // Fallback for non-dot completion (Global)
+
 
             const completions: CompletionItem[] = Array.from(tinderboxOperators.values())
                 .filter(op => !op.name.includes('.'))
@@ -1426,11 +1404,12 @@ try {
 
     // --- Hover Handler ---
     connection.onHover(
-        (textDocumentPosition: TextDocumentPositionParams): Hover | null => {
+        async (textDocumentPosition: TextDocumentPositionParams): Promise<Hover | null> => {
             const document = documents.get(textDocumentPosition.textDocument.uri);
             if (!document) return null;
-            const settings = { language: 'en' }; // Placeholder, ideally async getDocumentSettings
+            const settings = await getDocumentSettings(textDocumentPosition.textDocument.uri);
             const lang = settings.language;
+
 
             const offset = document.offsetAt(textDocumentPosition.position);
             const content = document.getText();
@@ -1722,3 +1701,6 @@ try {
 } catch (e: any) {
     connection.console.error(`Top-level error: ${e.message}`);
 }
+
+
+
