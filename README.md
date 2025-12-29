@@ -10,13 +10,13 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Keywords**: Completion for reserved words (`if`, `else`, `var`, `function`).
 - **Variables & Functions**: Dynamic completion for locally declared variables (`var:string vStr`) and functions.
 - **Snippets**: Function completion includes argument placeholders.
-![Completion](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/images/completion.gif)
+![Completion](images/completion.gif)
 
 ### 2. Hover Documentation
 - **Operator Details**: Hover over an operator to see its syntax, return type, and description.
 - **Attribute Info**: View descriptions and types for System Attributes.
 - **Bilingual Support**: Toggle between English and Japanese descriptions via `tinderboxActionCodeServer.language`.
-![Hover](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/images/hover.gif)
+![Hover](images/hover.gif)
 
 ### 3. Validation / Diagnostics
 - **Syntax Checking**: Detects unclosed strings and missing semicolons (heuristic-based).
