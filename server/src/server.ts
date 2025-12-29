@@ -907,10 +907,18 @@ try {
                 if (firstCol.startsWith('#')) continue;
 
                 // Name,AttributeDataType,AttributeDefault,AttributeGroup,AttributePurpose,AttributeInheritsPrefs,AttributeReadOnly,AttributeIntrinsic,OriginalVersion,CodeFirstAdded,CodeAltered,PlainLinkCount,TextLinkCount,WebLinkCount,ChangeRefSet,IsInternalOnly,HasUISetting,Text
+                // Name,AttributeDataType,...
                 const name = '$' + firstCol; // Add $ prefix
+                // Check type and skip if excluded
+                const rawType = row[1]?.trim().replace(/^"|"$/g, '') || 'string';
+                const normType = rawType.toLowerCase().replace(/[^a-z]/g, '');
+                if (normType === 'action' || normType === 'font' || normType === 'actiontype' || normType === 'fonttype') {
+                    continue;
+                }
+
                 const attr: SystemAttribute = {
                     name: name,
-                    type: row[1],
+                    type: rawType,
                     group: row[3],
                     defaultValue: row[2],
                     readOnly: row[6].toLowerCase() === 'true',
@@ -941,7 +949,10 @@ try {
                 if (row.length < 3) continue;
                 const rawName = row[0].trim().replace(/^"|"$/g, '');
                 // Name format: "Action-Type Attributes" -> "action"
+                // Name format: "Action-Type Attributes" -> "action"
                 const typeKey = rawName.split('-')[0].toLowerCase();
+
+                if (typeKey === 'action' || typeKey === 'font') continue;
 
                 const dataType: DataType = {
                     name: rawName,
@@ -1132,17 +1143,18 @@ try {
             const charBefore = (scanIdx >= 0 && content) ? content[scanIdx] : '';
             const hasDollarTrigger = charBefore === '$';
 
-            const attrCompletions: CompletionItem[] = Array.from(systemAttributes.values()).map((attr) => {
-                const item: CompletionItem = {
-                    label: attr.name,
-                    kind: CompletionItemKind.Variable,
-                    detail: `${attr.type} (Default: ${attr.defaultValue})`,
-                    // Simple check: if already have $, don't insert it again.
-                    insertText: hasDollarTrigger ? attr.name.substring(1) : attr.name,
-                    data: { type: 'attribute', key: attr.name, language: lang }
-                };
-                return item;
-            });
+            const attrCompletions: CompletionItem[] = Array.from(systemAttributes.values())
+                .map((attr) => {
+                    const item: CompletionItem = {
+                        label: attr.name,
+                        kind: CompletionItemKind.Variable,
+                        detail: `${attr.type} (Default: ${attr.defaultValue})`,
+                        // Simple check: if already have $, don't insert it again.
+                        insertText: hasDollarTrigger ? attr.name.substring(1) : attr.name,
+                        data: { type: 'attribute', key: attr.name, language: lang }
+                    };
+                    return item;
+                });
 
             // --- NEW: Function Snippet ---
             completions.push({
