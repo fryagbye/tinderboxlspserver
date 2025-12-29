@@ -2,6 +2,11 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.5] - 2025-12-29
+### Fixed
+- **Hover**: Correctly display Data Type description instead of function docs when hovering over type declarations (e.g., `var:string`).
+- **Packaging**: Restored `activationEvents` to satisfy `vsce` packaging requirements.
+
 ## [0.1.4] - 2025-12-29
 ### Fixed
 - **Dot Completion**: Fixed logic to correctly handle operator scopes and chained calls.

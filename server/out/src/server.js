@@ -795,10 +795,17 @@ try {
                 if (firstCol.startsWith('#'))
                     continue;
                 // Name,AttributeDataType,AttributeDefault,AttributeGroup,AttributePurpose,AttributeInheritsPrefs,AttributeReadOnly,AttributeIntrinsic,OriginalVersion,CodeFirstAdded,CodeAltered,PlainLinkCount,TextLinkCount,WebLinkCount,ChangeRefSet,IsInternalOnly,HasUISetting,Text
+                // Name,AttributeDataType,...
                 const name = '$' + firstCol; // Add $ prefix
+                // Check type and skip if excluded
+                const rawType = row[1]?.trim().replace(/^"|"$/g, '') || 'string';
+                const normType = rawType.toLowerCase().replace(/[^a-z]/g, '');
+                if (normType === 'action' || normType === 'font' || normType === 'actiontype' || normType === 'fonttype') {
+                    continue;
+                }
                 const attr = {
                     name: name,
-                    type: row[1],
+                    type: rawType,
                     group: row[3],
                     defaultValue: row[2],
                     readOnly: row[6].toLowerCase() === 'true',
@@ -830,7 +837,10 @@ try {
                     continue;
                 const rawName = row[0].trim().replace(/^"|"$/g, '');
                 // Name format: "Action-Type Attributes" -> "action"
+                // Name format: "Action-Type Attributes" -> "action"
                 const typeKey = rawName.split('-')[0].toLowerCase();
+                if (typeKey === 'action' || typeKey === 'font')
+                    continue;
                 const dataType = {
                     name: rawName,
                     description: row[1].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n'),
@@ -1000,7 +1010,8 @@ try {
         // Now scanIdx point to the char BEFORE the word, or -1.
         const charBefore = (scanIdx >= 0 && content) ? content[scanIdx] : '';
         const hasDollarTrigger = charBefore === '$';
-        const attrCompletions = Array.from(systemAttributes.values()).map((attr) => {
+        const attrCompletions = Array.from(systemAttributes.values())
+            .map((attr) => {
             const item = {
                 label: attr.name,
                 kind: node_1.CompletionItemKind.Variable,
@@ -1309,6 +1320,33 @@ try {
                     const segEnd = currentSegStart + segLen;
                     if (offset >= currentSegStart && offset <= segEnd) {
                         hoveredWord = seg.replace(/\(.*\)$/, ''); // "reverse"
+                        // FIX: Check for type declaration context (preceded by :)
+                        // e.g. "var:string" or "var: list"
+                        let isTypeDecl = false;
+                        let scanIdx = currentSegStart - 1;
+                        while (scanIdx >= 0 && /\s/.test(content[scanIdx])) {
+                            scanIdx--;
+                        }
+                        if (scanIdx >= 0 && content[scanIdx] === ':') {
+                            isTypeDecl = true;
+                        }
+                        if (isTypeDecl) {
+                            // Look up in tinderboxDataTypes
+                            const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
+                            if (typeInfo) {
+                                const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
+                                return {
+                                    contents: {
+                                        kind: 'markdown',
+                                        value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}`
+                                    },
+                                    range: {
+                                        start: document.positionAt(currentSegStart),
+                                        end: document.positionAt(segEnd)
+                                    }
+                                };
+                            }
+                        }
                         // If it's not the first segment (variable), we need the prefix chain to infer type
                         // e.g. prefix = "vList"
                         if (i > 0) {

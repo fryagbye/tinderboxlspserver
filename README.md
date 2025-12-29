@@ -10,13 +10,13 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Keywords**: Completion for reserved words (`if`, `else`, `var`, `function`).
 - **Variables & Functions**: Dynamic completion for locally declared variables (`var:string vStr`) and functions.
 - **Snippets**: Function completion includes argument placeholders.
-![Completion](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/completion.png)
+![Completion](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/images/completion.gif)
 
 ### 2. Hover Documentation
 - **Operator Details**: Hover over an operator to see its syntax, return type, and description.
 - **Attribute Info**: View descriptions and types for System Attributes.
 - **Bilingual Support**: Toggle between English and Japanese descriptions via `tinderboxActionCodeServer.language`.
-![Hover](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/hover.png)
+![Hover](https://raw.githubusercontent.com/fryagbye/tinderboxlspserver/main/images/hover.gif)
 
 ### 3. Validation / Diagnostics
 - **Syntax Checking**: Detects unclosed strings and missing semicolons (heuristic-based).
@@ -44,6 +44,10 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
 
 ## Release Notes
+
+### 0.1.5
+- Fix: Data Type Hover (shows type info in `var:type`).
+- Fix: Packaging configuration.
 
 ### 0.1.4
 - Fix: Robust Dot Completion (Scope, Chains, Arguments).

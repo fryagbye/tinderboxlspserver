@@ -1464,6 +1464,36 @@ try {
 
                         if (offset >= currentSegStart && offset <= segEnd) {
                             hoveredWord = seg.replace(/\(.*\)$/, ''); // "reverse"
+
+                            // FIX: Check for type declaration context (preceded by :)
+                            // e.g. "var:string" or "var: list"
+                            let isTypeDecl = false;
+                            let scanIdx = currentSegStart - 1;
+                            while (scanIdx >= 0 && /\s/.test(content[scanIdx])) {
+                                scanIdx--;
+                            }
+                            if (scanIdx >= 0 && content[scanIdx] === ':') {
+                                isTypeDecl = true;
+                            }
+
+                            if (isTypeDecl) {
+                                // Look up in tinderboxDataTypes
+                                const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
+                                if (typeInfo) {
+                                    const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
+                                    return {
+                                        contents: {
+                                            kind: 'markdown',
+                                            value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}`
+                                        },
+                                        range: {
+                                            start: document.positionAt(currentSegStart),
+                                            end: document.positionAt(segEnd)
+                                        }
+                                    };
+                                }
+                            }
+
                             // If it's not the first segment (variable), we need the prefix chain to infer type
                             // e.g. prefix = "vList"
                             if (i > 0) {
