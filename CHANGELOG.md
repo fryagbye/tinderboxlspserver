@@ -2,6 +2,11 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.7] - 2025-12-29
+### Changed
+- **Documentation**: Added details about `.tbxc` extension auto-detection in README.
+- **Documentation**: Reorganized release notes in README with a collapsible section for older versions.
+
 ## [0.1.6] - 2025-12-29
 ### Fixed
 - **Localization**: Fixed improper language loading (Japanese settings were ignored in 0.1.5).

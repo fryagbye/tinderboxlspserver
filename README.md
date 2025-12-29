@@ -49,6 +49,10 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 ## Release Notes
 
+### 0.1.7
+- Doc: Added information about `.tbxc` extension support.
+- Doc: Improved layout for release notes.
+
 ### 0.1.6
 - Fix: Localization (Japanese setting now works).
 - Fix: Validation (Smarter semicolon check).
