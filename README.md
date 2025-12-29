@@ -26,8 +26,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 
 
-### 4. Definition & References (Stub)
-- Basic support for jumping to definitions of local variables and functions (heuristics).
+### 4. Definition & References
+- **Go to Definition**: Jump to the definition of user-defined functions, variables, and arguments within the document.
+- **Scope Awareness**: Context-sensitive jumping that correctly resolves variables even when multiple functions share the same identifier names.
 
 ## Configuration
 
@@ -48,6 +49,12 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
 
 ## Release Notes
+
+### 0.1.8
+- Feature: **Go to Definition** (Scope-aware jumping for functions/variables).
+- Fix: Hover for chained expressions (e.g., `$Text(aID).eachLine()`).
+- Fix: Enhanced hover for untyped variables, loop variables, and arguments.
+- Fix: Robust operator name matching (cleaner identification of iterators).
 
 ### 0.1.7
 - Doc: Added information about `.tbxc` extension support.

@@ -15,6 +15,8 @@ import {
     SemanticTokensParams,
     InsertTextFormat,
     Hover,
+    Definition,
+    Location,
     Range
 } from 'vscode-languageserver/node';
 
@@ -83,7 +85,9 @@ try {
                 // Signature Help capability
                 signatureHelpProvider: {
                     triggerCharacters: ['(', ',']
-                }
+                },
+                // Definition Provider capability
+                definitionProvider: true
             }
         };
         if (hasWorkspaceFolderCapability) {
@@ -793,21 +797,23 @@ try {
                         // Also populate dotOperatorsMap (Suffix based) for hover fallback
                         // We extract suffix after LAST dot
                         const dotIdx = label.lastIndexOf('.');
+                        const cleanLabel = label.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
                         if (dotIdx > 0) {
                             const suffix = label.substring(dotIdx + 1);
-                            if (suffix) {
-                                if (!dotOperatorsMap.has(suffix)) {
-                                    dotOperatorsMap.set(suffix, []); // Initialized as array
+                            const cleanSuffix = suffix.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                            if (cleanSuffix) {
+                                if (!dotOperatorsMap.has(cleanSuffix)) {
+                                    dotOperatorsMap.set(cleanSuffix, []);
                                 }
-                                dotOperatorsMap.get(suffix)?.push(op);
+                                dotOperatorsMap.get(cleanSuffix)?.push(op);
                             }
                         } else {
-                            // No dot in name (e.g. "lowercase"), but matches IsDotOp=true
-                            // Treat whole name as suffix?
-                            if (!dotOperatorsMap.has(label)) {
-                                dotOperatorsMap.set(label, []);
+                            if (cleanLabel) {
+                                if (!dotOperatorsMap.has(cleanLabel)) {
+                                    dotOperatorsMap.set(cleanLabel, []);
+                                }
+                                dotOperatorsMap.get(cleanLabel)?.push(op);
                             }
-                            dotOperatorsMap.get(label)?.push(op);
                         }
                     }
 
@@ -1434,7 +1440,8 @@ try {
 
             // Find the word/expression under the cursor
             // This regex captures identifiers, system attributes, and dot-chained expressions
-            const wordPattern = /([$a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+(?:\([^)]*\))?)*)/g;
+            // FIX: Support optional parentheses in the first segment (e.g. $Text(aID). )
+            const wordPattern = /([$a-zA-Z0-9_]+(?:\([^)]*\))?(?:\.[a-zA-Z0-9_]+(?:\([^)]*\))?)*)/g;
             let match;
             let hoveredWord = '';
             let hoveredRange: Range | undefined;
@@ -1494,9 +1501,6 @@ try {
                             // If it's not the first segment (variable), we need the prefix chain to infer type
                             // e.g. prefix = "vList"
                             if (i > 0) {
-                                const prefix = chain.substring(0, chain.indexOf(seg, 0)); // simple prefix for now
-                                // "vList.sort().reverse" -> prefix "vList.sort()."
-                                // Wait, reconstructing prefix from segments is safer.
                                 const prefixExpr = segments.slice(0, i).join('.');
                                 const inferredType = evaluateExpressionType(prefixExpr, (() => {
                                     const vars = new Map<string, string>();
@@ -1509,14 +1513,11 @@ try {
                                 })());
 
                                 if (inferredType) {
-                                    // Look up method on inferred type
                                     const methods = typeMethods.get(inferredType.toLowerCase());
                                     if (methods) {
                                         const op = methods.find(m => {
                                             const suffix = m.name.split('.').pop();
-                                            // FIX: Hovered word "lowercase" != "lowercase()"
-                                            // Strip parens from CSV name before comparing
-                                            const cleanSuffix = suffix?.replace(/\(.*\)$/, '');
+                                            const cleanSuffix = suffix?.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
                                             return cleanSuffix === hoveredWord;
                                         });
                                         if (op) {
@@ -1533,22 +1534,23 @@ try {
                                             };
                                         }
                                     }
-                                } else {
-                                    // i === 0: Global Function or Variable
-                                    // Try to find in tinderboxOperators (values) by stripping parens and case-insensitive check
-                                    const op = Array.from(tinderboxOperators.values()).find(op => {
-                                        const cleanName = op.name.replace(/\(.*\)$/, '').toLowerCase();
-                                        return cleanName === hoveredWord.toLowerCase();
-                                    });
-                                    if (op) {
-                                        const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
-                                        return {
-                                            contents: {
-                                                kind: 'markdown',
-                                                value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
-                                            }
-                                        };
-                                    }
+                                }
+
+                                // FALLBACK: Try dotOperatorsMap (Global Suffix match) if specific type inference failed or didn't yield result
+                                const ops = dotOperatorsMap.get(hoveredWord);
+                                if (ops && ops.length > 0) {
+                                    const op = ops[0]; // Take first match for now
+                                    const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                    return {
+                                        contents: {
+                                            kind: 'markdown',
+                                            value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                                        },
+                                        range: {
+                                            start: document.positionAt(currentSegStart),
+                                            end: document.positionAt(segEnd)
+                                        }
+                                    };
                                 }
                             }
 
@@ -1589,7 +1591,7 @@ try {
             // 2. Operators / Functions (Standard Lookup for non-chained or simple names)
             // Try robust lookup (strip parens, case-insensitive)
             const op = Array.from(tinderboxOperators.values()).find(op => {
-                const cleanName = op.name.replace(/\(.*\)$/, '').toLowerCase();
+                const cleanName = op.name.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '').toLowerCase();
                 return cleanName === hoveredWord.toLowerCase();
             });
             if (op) {
@@ -1605,22 +1607,42 @@ try {
             // 3. Fallback: Local Variables
             // We need textBefore for context
             const textBefore = content.slice(0, offset);
-            const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${hoveredWord}\\b`, 'g');
+            // FIX: More robust var regex (handle optional type and spaces)
+            const varRegex = /var(?::[a-zA-Z0-9_]+)?\s+([a-zA-Z0-9_]+)\b/g;
             let mVar;
             while ((mVar = varRegex.exec(textBefore))) {
-                const foundVarType = mVar[1];
-                if (foundVarType) {
+                if (mVar[1] === hoveredWord) {
+                    // Find the full declaration for type if possible
+                    const declLine = content.substring(0, mVar.index + mVar[0].length);
+                    const specificVarMatch = declLine.match(/var(?::([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)$/);
+                    const foundVarType = specificVarMatch ? specificVarMatch[1] : undefined;
+
                     return {
                         contents: {
                             kind: 'markdown',
-                            value: `**${hoveredWord}**\n\n*Variable*\n*Type*: ${foundVarType}`
+                            value: `**${hoveredWord}**\n\n*Variable*${foundVarType ? `\n*Type*: ${foundVarType}` : ''}`
                         },
                         range: hoveredRange
                     };
                 }
             }
 
-            // 4. Function Arguments: function Name(arg:Type)
+            // 4. Iterator Variables: .each(loopVar) or .eachLine(loopVar)
+            const iteratorRegex = /\.each(?:Line)?\s*\(\s*([$a-zA-Z0-9_]+)(?::[a-zA-Z0-9_]+)?\s*(?:,[^)]*)?\)/g;
+            let mIter;
+            while ((mIter = iteratorRegex.exec(textBefore))) {
+                if (mIter[1] === hoveredWord) {
+                    return {
+                        contents: {
+                            kind: 'markdown',
+                            value: `**${hoveredWord}**\n\n*Loop Variable*`
+                        },
+                        range: hoveredRange
+                    };
+                }
+            }
+
+            // 5. Function Arguments: function Name(arg:Type)
             // Find the last function definition before the cursor (Enclosing function heuristic)
             const funcRegex = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
             let lastFuncMatch = null;
@@ -1635,15 +1657,15 @@ try {
                 for (const part of argParts) {
                     const trimmed = part.trim();
                     // Match "Name" or "Name:Type"
-                    const argMatch = trimmed.match(/^([a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?$/);
+                    const argMatch = trimmed.match(/^([$a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?$/);
                     if (argMatch) {
                         const argName = argMatch[1];
                         const argType = argMatch[2];
-                        if (argName === hoveredWord && argType) {
+                        if (argName === hoveredWord) {
                             return {
                                 contents: {
                                     kind: 'markdown',
-                                    value: `**${hoveredWord}**\n\n*Argument*\n*Type*: ${argType}`
+                                    value: `**${hoveredWord}**\n\n*Argument*${argType ? `\n*Type*: ${argType}` : ''}`
                                 },
                                 range: hoveredRange
                             };
@@ -1708,6 +1730,116 @@ try {
 
         return null;
     });
+
+    // --- Definition Handler ---
+    connection.onDefinition(
+        async (params: TextDocumentPositionParams): Promise<Definition | null> => {
+            const document = documents.get(params.textDocument.uri);
+            if (!document) return null;
+
+            const content = document.getText();
+            const offset = document.offsetAt(params.position);
+
+            // 1. Identify word under cursor
+            // Re-use logic similar to hover but simplified for just name
+            const line = document.getText({
+                start: { line: params.position.line, character: 0 },
+                end: { line: params.position.line, character: 1000 }
+            });
+
+            // Extract word at the specific position
+            const wordRegex = /[$a-zA-Z0-9_]+/g;
+            let m;
+            let targetWord = '';
+            while ((m = wordRegex.exec(line))) {
+                if (params.position.character >= m.index && params.position.character <= m.index + m[0].length) {
+                    targetWord = m[0];
+                    break;
+                }
+            }
+
+            if (!targetWord) return null;
+
+            // --- 1. Scoped Search (Function / Iterator block) ---
+            // Find the start of the current block by scanning backwards for '{'
+            let scopeContent = '';
+            let scopeStartOffset = -1;
+            let depth = 0;
+            for (let i = offset - 1; i >= 0; i--) {
+                if (content[i] === '}') depth++;
+                else if (content[i] === '{') {
+                    if (depth > 0) depth--;
+                    else {
+                        // Found the start of the current scope
+                        scopeStartOffset = i;
+                        scopeContent = content.substring(i, offset);
+                        break;
+                    }
+                }
+            }
+
+            if (scopeStartOffset !== -1) {
+                // a. Check for Loop Variable in the preceding iterator call: .each(Name)
+                const textBeforeScope = content.substring(Math.max(0, scopeStartOffset - 100), scopeStartOffset);
+                const iterMatch = textBeforeScope.match(/\.each(?:Line)?\s*\(\s*([$a-zA-Z0-9_]+)(?::[a-zA-Z0-9_]+)?\s*(?:,[^)]*)?\)\s*$/);
+                if (iterMatch && iterMatch[1] === targetWord) {
+                    const nameIdx = iterMatch[0].indexOf(targetWord);
+                    return Location.create(params.textDocument.uri, {
+                        start: document.positionAt(scopeStartOffset - (iterMatch[0].length - nameIdx)),
+                        end: document.positionAt(scopeStartOffset - (iterMatch[0].length - nameIdx - targetWord.length))
+                    });
+                }
+
+                // b. Check for Function Arguments of the enclosing function
+                const funcMatch = textBeforeScope.match(/function\s+[a-zA-Z0-9_]+\s*\(([^)]*)\)\s*$/);
+                if (funcMatch) {
+                    const args = funcMatch[1];
+                    const argRegex = new RegExp(`\\b${targetWord.replace('$', '\\$')}\\b`);
+                    const mArg = args.match(argRegex);
+                    if (mArg) {
+                        const argNameOffset = scopeStartOffset - (funcMatch[0].length - funcMatch[0].indexOf(args)) + mArg.index!;
+                        return Location.create(params.textDocument.uri, {
+                            start: document.positionAt(argNameOffset),
+                            end: document.positionAt(argNameOffset + targetWord.length)
+                        });
+                    }
+                }
+
+                // c. Check for Variable Declarations within this scope before the cursor
+                const varPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${targetWord}\\b`, 'g');
+                let mVar;
+                while ((mVar = varPattern.exec(scopeContent))) {
+                    return Location.create(params.textDocument.uri, {
+                        start: document.positionAt(scopeStartOffset + mVar.index),
+                        end: document.positionAt(scopeStartOffset + mVar.index + mVar[0].length)
+                    });
+                }
+            }
+
+            // --- 2. Global Search (Fallback or Global items like Functions) ---
+            // a. Function Definitions: function Name
+            const funcPattern = new RegExp(`function\\s+${targetWord}\\b`, 'g');
+            let mFunc;
+            while ((mFunc = funcPattern.exec(content))) {
+                return Location.create(params.textDocument.uri, {
+                    start: document.positionAt(mFunc.index),
+                    end: document.positionAt(mFunc.index + mFunc[0].length)
+                });
+            }
+
+            // b. Variable Declarations (Global fallback)
+            const globalVarPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${targetWord}\\b`, 'g');
+            let mGlobalVar;
+            while ((mGlobalVar = globalVarPattern.exec(content))) {
+                return Location.create(params.textDocument.uri, {
+                    start: document.positionAt(mGlobalVar.index),
+                    end: document.positionAt(mGlobalVar.index + mGlobalVar[0].length)
+                });
+            }
+
+            return null;
+        }
+    );
 
     // Make the text document manager listen on the connection
     // for open, change and close text document events

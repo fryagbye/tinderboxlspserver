@@ -2,6 +2,15 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.8] - 2025-12-29
+### Fixed
+- **Hover**: Fixed missing hover information for chained expressions starting with attributes and arguments (e.g., `$Text(aID).eachLine()`).
+- **Hover**: Improved method matching by robustly cleaning iterator suffixes (e.g., `{actions}`) from operator names.
+- **Hover**: Added fallback to global dot operator lookup when type inference fails.
+- **Hover**: Enhanced hover information for untyped local variables, loop variables (`.each()`), and function arguments.
+- **Definition**: Implemented "Go to Definition" for user functions, variables, arguments, and loop variables.
+- **Definition**: Added scope-aware definition lookup to prioritize local block context.
+
 ## [0.1.7] - 2025-12-29
 ### Changed
 - **Documentation**: Added details about `.tbxc` extension auto-detection in README.
