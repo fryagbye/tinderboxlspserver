@@ -5,7 +5,7 @@
   "author": "fryagbye",
   "icon": "icon.png",
   "license": "MIT",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "frygabye",
   "repository": {
     "type": "git",
@@ -17,9 +17,6 @@
   },
   "categories": [
     "Programming Languages"
-  ],
-  "activationEvents": [
-    "onLanguage:tinderbox-action-code"
   ],
   "main": "./client/out/src/extension",
   "contributes": {

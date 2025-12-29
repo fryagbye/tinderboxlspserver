@@ -45,6 +45,11 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 ## Release Notes
 
+### 0.1.4
+- Fix: Robust Dot Completion (Scope, Chains, Arguments).
+- Fix: Double Insertion (Parens, $).
+- Fix: Global Function Hover.
+
 ### 0.1.3
 - Feature: Type-aware Dot Completion (filters based on scoped types).
 - Fix: Attributes excluded from dot completion suggestions.

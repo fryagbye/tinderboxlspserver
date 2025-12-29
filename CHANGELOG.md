@@ -2,6 +2,14 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.4] - 2025-12-29
+### Fixed
+- **Dot Completion**: Fixed logic to correctly handle operator scopes and chained calls.
+- **Double Insertion**: Fixed duplicate parentheses `()` and attribute prefixes `$` in completions.
+- **Global Hover**: Fixed hover information not displaying for global functions due to matching issues.
+- **Attributes**: Robustly handle attribute completions regardless of partial typing or cursor position.
+- **Arguments**: Added support for attributes with arguments (e.g. `$Name("Note")`) in dot completion.
+
 ## [0.1.3] - 2025-12-29
 ### Added
 - Feature: Type-aware dot completion suggestions based on inferred variable types.

@@ -515,10 +515,14 @@ try {
 
         // 8. System Attributes
         if (expr.startsWith('$')) {
-            const parts = expr.split('.');
+            // Check for arguments e.g. $Name("Note") or $Name(/path/to)
+            // Strip parens and args for type lookup
+            const bareAttr = expr.replace(/\(.*\)$/, '');
+
+            const parts = bareAttr.split('.');
             // Simple attribute reference
             if (parts.length === 1) {
-                const attr = systemAttributes.get(expr);
+                const attr = systemAttributes.get(bareAttr);
                 return attr ? attr.type.toLowerCase() : null;
             }
         }
@@ -548,7 +552,10 @@ try {
                 const methods = typeMethods.get(leftType.toLowerCase());
                 if (methods) {
                     const op = methods.find(m => {
-                        const suffix = m.name.split('.').pop();
+                        // FIX: CSV names often have (), e.g. "String.lowercase()".
+                        // User might type "$Name.lowercase".
+                        // We must strip parens from the DEFINITION for comparison.
+                        const suffix = m.name.split('.').pop()?.replace(/\(.*\)$/, '') || m.name;
                         return suffix === methodName;
                     });
                     // Return type from CSV is often capitalized "List", "String" -> convert to lowercase
@@ -730,9 +737,35 @@ try {
                         const scope = opScope.toLowerCase();
 
                         // Rules for Scope -> Types
+                        // Rules for Scope -> Types
                         if (scope === 'item') {
-                            // "Item" applies to almost all types
-                            ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
+                            // Heuristic Fix: The CSV often marks type-specific operators as "Item".
+                            // If the name starts with "List.", "String.", etc., treat it as that type.
+                            const lowerName = label.toLowerCase();
+                            if (lowerName.startsWith('list.')) {
+                                addOpToType('list', op);
+                                addOpToType('set', op); // Assuming lists/sets share
+                            } else if (lowerName.startsWith('set.')) {
+                                addOpToType('set', op);
+                                addOpToType('list', op);
+                            } else if (lowerName.startsWith('string.')) {
+                                addOpToType('string', op);
+                            } else if (lowerName.startsWith('number.')) {
+                                addOpToType('number', op);
+                            } else if (lowerName.startsWith('date.')) {
+                                addOpToType('date', op);
+                            } else if (lowerName.startsWith('color.')) {
+                                addOpToType('color', op);
+                            } else if (lowerName.startsWith('boolean.')) {
+                                addOpToType('boolean', op);
+                            } else if (lowerName.startsWith('dictionary.')) {
+                                addOpToType('dictionary', op);
+                            } else if (lowerName.startsWith('interval.')) {
+                                addOpToType('interval', op);
+                            } else {
+                                // Truly generic "Item" scope
+                                ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
+                            }
                         } else if (scope === 'list') {
                             addOpToType('list', op);
                             addOpToType('set', op);
@@ -935,45 +968,51 @@ try {
             const lang = settings.language;
             const content = document?.getText();
             let triggerPrefix = '';
+            let textBefore = '';
 
             if (content && document) {
                 const offset = document.offsetAt(textDocumentPosition.position);
-                const textBefore = content.slice(0, offset).trimEnd();
+                textBefore = content.slice(0, offset).trimEnd();
 
                 // Detect Dot Completion: e.g. "$Name." or "$Name.re"
                 // 1. Immediate dot: ends with .
                 // 2. Partial method: ends with .ident
-                const dotMatch = textBefore.match(/([$a-zA-Z0-9_.)\]]+)\.([a-zA-Z0-9_]*)$/);
+                // FIX: Update regex to support arguments with quotes, slashes, spaces (e.g. $Name("target"). )
+                const dotMatch = textBefore.match(/([$a-zA-Z0-9_.()\[\]"'/\- ]+)\.([a-zA-Z0-9_]*)$/);
 
                 if (dotMatch) {
                     const receiver = dotMatch[1]; // e.g. "vList", "Color", "$Name"
                     const partial = dotMatch[2];  // e.g. "so", ""
                     let type: string | null = null;
 
-                    // 1. System Attribute
+                    // 1. System Attribute (Direct lookup with potential args)
                     if (receiver.startsWith('$')) {
-                        const attr = systemAttributes.get(receiver);
+                        // Strip args ($Name("foo") -> $Name)
+                        const bareReceiver = receiver.replace(/\(.*\)$/, '');
+                        const attr = systemAttributes.get(bareReceiver);
                         if (attr) type = attr.type;
                     }
+
                     // 2. Class/Group (e.g. Color.blue)
-                    else if (operatorFamilies.has(receiver)) {
+                    if (!type && operatorFamilies.has(receiver)) {
                         triggerPrefix = receiver; // Fallback to existing logic for families
                     }
-                    else {
-                        // 3. Local Variable
+
+                    // 3. Local Variable
+                    if (!type) {
                         const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${receiver}\\b`, 'g');
                         let mVar;
                         varRegex.lastIndex = 0;
                         while ((mVar = varRegex.exec(content))) {
                             type = mVar[1];
                         }
+                    }
 
-                        // 4. Recursive Inference (Chaining)
-                        if (!type) {
-                            // Pass position of the dot to infer what comes before it
-                            const dotIndex = textBefore.lastIndexOf('.');
-                            type = recursiveInferType(content, document, dotIndex);
-                        }
+                    // 4. Recursive Inference (Chaining)
+                    if (!type) {
+                        // Pass position of the dot to infer what comes before it
+                        const dotIndex = textBefore.lastIndexOf('.');
+                        type = recursiveInferType(content, document, dotIndex);
                     }
 
                     if (type) {
@@ -987,18 +1026,47 @@ try {
                                 .map(op => {
                                     const suffix = op.name.split('.').pop() || op.name;
                                     const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                    // Strip () AND (args) from suffix/name before appending our own snippet parens
+                                    // "lowercase()" -> "lowercase", "sort(attrs)" -> "sort"
+                                    const cleanSuffix = suffix.replace(/\(.*\)$/, '');
                                     return {
                                         label: suffix,
                                         kind: CompletionItemKind.Method,
                                         detail: op.signature,
                                         documentation: { kind: 'markdown', value: `**${op.name}**\n\n${desc}` },
-                                        insertText: `${suffix}($0)`,
+                                        insertText: `${cleanSuffix}($0)`, // Always empty parens with cursor inside
                                         insertTextFormat: InsertTextFormat.Snippet,
                                         data: { type: 'operator', key: op.name, language: lang }
                                     };
                                 });
                         }
+
                     }
+
+                    // 5. Operator Families (e.g. Color.blue)
+                    if (triggerPrefix && operatorFamilies.has(triggerPrefix)) {
+                        const members = operatorFamilies.get(triggerPrefix) || [];
+                        return members.map((mem) => {
+                            const fullName = triggerPrefix + '.' + mem;
+                            const op = tinderboxOperators.get(fullName);
+                            const isFunc = op && (op.kind === CompletionItemKind.Function || op.kind === CompletionItemKind.Method);
+                            const desc = (lang === 'ja' && op?.descriptionJa) ? op.descriptionJa : op?.description;
+                            return {
+                                label: mem,
+                                kind: op ? op.kind : CompletionItemKind.Method,
+                                detail: op ? op.signature : fullName,
+                                documentation: desc ? { kind: 'markdown', value: desc } : undefined,
+                                insertText: isFunc ? `${mem}($0)` : mem,
+                                insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
+                                data: { type: 'operator', key: fullName, language: lang }
+                            };
+                        });
+                    }
+
+                    // STRICT RETURN for Dot Completion
+                    // If we found a dot, we MUST return something related to it (or nothing).
+                    // We must NOT fall through to the global list (which includes attributes).
+                    return [];
                 }
             }
 
@@ -1025,11 +1093,15 @@ try {
                 .filter(op => !op.name.includes('.'))
                 .map((op) => {
                     const isFunc = op.kind === CompletionItemKind.Function || op.kind === CompletionItemKind.Method;
+                    // FIX: Strip parens from global functions too
+                    const cleanName = op.name.replace(/\(.*\)$/, '');
                     return {
-                        label: op.name,
+                        label: op.name, // Label keeps parens for clarity? Or clean? User wants clean insertion.
+                        // Actually, if label has parens, VS Code validation might fail if insertText is different?
+                        // Usually label is display.
                         kind: op.kind,
                         detail: op.signature,
-                        insertText: isFunc ? `${op.name}($0)` : op.name,
+                        insertText: isFunc ? `${cleanName}($0)` : cleanName,
                         insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
                         data: { type: 'operator', key: op.name, language: lang }
                     };
@@ -1046,13 +1118,30 @@ try {
                 }
             }
 
+            // FIX: Robust backward scan for $ trigger
+            // We scan backwards from offset-1 until we hit a non-identifier char.
+            // If the char BEFORE the identifier is $, then hasDollarTrigger = true.
+            const offset = (document && content) ? document.offsetAt(textDocumentPosition.position) : 0;
+            let scanIdx = (content && offset > 0) ? offset - 1 : -1;
+
+            // Skip current word part (e.g. "Na" in "$Na")
+            while (scanIdx >= 0 && content && /[a-zA-Z0-9_]/.test(content[scanIdx])) {
+                scanIdx--;
+            }
+            // Now scanIdx point to the char BEFORE the word, or -1.
+            const charBefore = (scanIdx >= 0 && content) ? content[scanIdx] : '';
+            const hasDollarTrigger = charBefore === '$';
+
             const attrCompletions: CompletionItem[] = Array.from(systemAttributes.values()).map((attr) => {
-                return {
+                const item: CompletionItem = {
                     label: attr.name,
                     kind: CompletionItemKind.Variable,
                     detail: `${attr.type} (Default: ${attr.defaultValue})`,
+                    // Simple check: if already have $, don't insert it again.
+                    insertText: hasDollarTrigger ? attr.name.substring(1) : attr.name,
                     data: { type: 'attribute', key: attr.name, language: lang }
                 };
+                return item;
             });
 
             // --- NEW: Function Snippet ---
@@ -1386,8 +1475,10 @@ try {
                                     if (methods) {
                                         const op = methods.find(m => {
                                             const suffix = m.name.split('.').pop();
-                                            // Hovered word might be "reverse" or "reverse()"
-                                            return suffix === hoveredWord;
+                                            // FIX: Hovered word "lowercase" != "lowercase()"
+                                            // Strip parens from CSV name before comparing
+                                            const cleanSuffix = suffix?.replace(/\(.*\)$/, '');
+                                            return cleanSuffix === hoveredWord;
                                         });
                                         if (op) {
                                             const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
@@ -1402,6 +1493,22 @@ try {
                                                 }
                                             };
                                         }
+                                    }
+                                } else {
+                                    // i === 0: Global Function or Variable
+                                    // Try to find in tinderboxOperators (values) by stripping parens and case-insensitive check
+                                    const op = Array.from(tinderboxOperators.values()).find(op => {
+                                        const cleanName = op.name.replace(/\(.*\)$/, '').toLowerCase();
+                                        return cleanName === hoveredWord.toLowerCase();
+                                    });
+                                    if (op) {
+                                        const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                                        return {
+                                            contents: {
+                                                kind: 'markdown',
+                                                value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                                            }
+                                        };
                                     }
                                 }
                             }
@@ -1440,7 +1547,12 @@ try {
             }
 
             // 2. Operators / Functions (Standard Lookup for non-chained or simple names)
-            const op = tinderboxOperators.get(hoveredWord);
+            // 2. Operators / Functions (Standard Lookup for non-chained or simple names)
+            // Try robust lookup (strip parens, case-insensitive)
+            const op = Array.from(tinderboxOperators.values()).find(op => {
+                const cleanName = op.name.replace(/\(.*\)$/, '').toLowerCase();
+                return cleanName === hoveredWord.toLowerCase();
+            });
             if (op) {
                 const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
                 return {
