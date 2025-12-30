@@ -2,6 +2,10 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.1.9] - 2025-12-30
+### Fixed
+- **Server**: Fixed a crash where the LSP server would fail with an `Invalid regular expression` (Unterminated group) error when encountering unescaped special characters in dynamic regex construction (e.g., during hover or completion).
+
 ## [0.1.8] - 2025-12-29
 ### Fixed
 - **Hover**: Fixed missing hover information for chained expressions starting with attributes and arguments (e.g., `$Text(aID).eachLine()`).

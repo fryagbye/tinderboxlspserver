@@ -601,6 +601,10 @@ try {
         return true;
     }
 
+    function escapeRegExp(string: string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+    }
+
     connection.onDidChangeWatchedFiles(_change => {
         // Monitored files have change in VSCode
         connection.console.log('We received an file change event');
@@ -1031,7 +1035,7 @@ try {
 
                 // 3. Local Variable
                 if (!type) {
-                    const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${receiver}\\b`, 'g');
+                    const varRegex = new RegExp(`var:([a-zA-Z0-9_]+)\\s+${escapeRegExp(receiver)}\\b`, 'g');
                     let mVar;
                     varRegex.lastIndex = 0;
                     while ((mVar = varRegex.exec(content))) {
@@ -1794,7 +1798,7 @@ try {
                 const funcMatch = textBeforeScope.match(/function\s+[a-zA-Z0-9_]+\s*\(([^)]*)\)\s*$/);
                 if (funcMatch) {
                     const args = funcMatch[1];
-                    const argRegex = new RegExp(`\\b${targetWord.replace('$', '\\$')}\\b`);
+                    const argRegex = new RegExp(`\\b${escapeRegExp(targetWord)}\\b`);
                     const mArg = args.match(argRegex);
                     if (mArg) {
                         const argNameOffset = scopeStartOffset - (funcMatch[0].length - funcMatch[0].indexOf(args)) + mArg.index!;
@@ -1806,7 +1810,7 @@ try {
                 }
 
                 // c. Check for Variable Declarations within this scope before the cursor
-                const varPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${targetWord}\\b`, 'g');
+                const varPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${escapeRegExp(targetWord)}\\b`, 'g');
                 let mVar;
                 while ((mVar = varPattern.exec(scopeContent))) {
                     return Location.create(params.textDocument.uri, {
@@ -1818,7 +1822,7 @@ try {
 
             // --- 2. Global Search (Fallback or Global items like Functions) ---
             // a. Function Definitions: function Name
-            const funcPattern = new RegExp(`function\\s+${targetWord}\\b`, 'g');
+            const funcPattern = new RegExp(`function\\s+${escapeRegExp(targetWord)}\\b`, 'g');
             let mFunc;
             while ((mFunc = funcPattern.exec(content))) {
                 return Location.create(params.textDocument.uri, {
@@ -1828,7 +1832,7 @@ try {
             }
 
             // b. Variable Declarations (Global fallback)
-            const globalVarPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${targetWord}\\b`, 'g');
+            const globalVarPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${escapeRegExp(targetWord)}\\b`, 'g');
             let mGlobalVar;
             while ((mGlobalVar = globalVarPattern.exec(content))) {
                 return Location.create(params.textDocument.uri, {

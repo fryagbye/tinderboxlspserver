@@ -50,6 +50,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 ## Release Notes
 
+### 0.1.9
+- Fix: Resolved a crash (`Invalid regular expression`) caused by unescaped special characters (like unclosed parentheses) during hover/completion.
+
 ### 0.1.8
 - Feature: **Go to Definition** (Scope-aware jumping for functions/variables).
 - Fix: Hover for chained expressions (e.g., `$Text(aID).eachLine()`).
@@ -59,6 +62,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 0.1.7
 - Doc: Added information about `.tbxc` extension support.
 - Doc: Improved layout for release notes.
+
+<details>
+<summary>Earlier Releases</summary>
 
 ### 0.1.6
 - Fix: Localization (Japanese setting now works).
@@ -72,9 +78,6 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - Fix: Robust Dot Completion (Scope, Chains, Arguments).
 - Fix: Double Insertion (Parens, $).
 - Fix: Global Function Hover.
-
-<details>
-<summary>Earlier Releases</summary>
 
 ### 0.1.3
 - Feature: Type-aware Dot Completion (filters based on scoped types).
