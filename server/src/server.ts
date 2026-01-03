@@ -25,7 +25,10 @@ import {
     DocumentSymbolParams,
     PrepareRenameResult,
     RenameParams,
-    WorkspaceEdit
+    WorkspaceEdit,
+    InlayHint,
+    InlayHintParams,
+    InlayHintKind
 } from 'vscode-languageserver/node';
 
 import {
@@ -103,7 +106,9 @@ try {
                 // Rename capability
                 renameProvider: {
                     prepareProvider: true
-                }
+                },
+                // Inlay Hint capability
+                inlayHintProvider: true
             }
         };
         if (hasWorkspaceFolderCapability) {
@@ -442,6 +447,93 @@ try {
                 [textDocument.uri]: edits
             }
         };
+    });
+
+    connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc) return [];
+
+        const text = doc.getText();
+        const hints: InlayHint[] = [];
+
+        // 1. Gather all local function definitions to get parameter names
+        const functions = new Map<string, string[]>();
+        const funcDefPattern = /\bfunction\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        let match;
+        while ((match = funcDefPattern.exec(text)) !== null) {
+            const funcName = match[1];
+            const paramsStr = match[2];
+            // Parameter can be "type Name" or just "Name"
+            const paramNames = paramsStr.split(',').map(p => {
+                const parts = p.trim().split(/\s+/);
+                return parts[parts.length - 1];
+            }).filter(p => p && /^[a-zA-Z0-9_]+$/.test(p));
+            functions.set(funcName, paramNames);
+        }
+
+        // 2. Find function calls and provide hints
+        const callPattern = /\b([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        callPattern.lastIndex = 0;
+        while ((match = callPattern.exec(text)) !== null) {
+            const funcName = match[1];
+
+            // Skip keywords that look like function calls
+            if (['function', 'if', 'while', 'each', 'for', 'return', 'var'].includes(funcName)) {
+                continue;
+            }
+
+            const argsStr = match[2];
+            const argsStartOffset = match.index + match[0].indexOf('(') + 1;
+
+            if (functions.has(funcName)) {
+                const paramNames = functions.get(funcName)!;
+
+                // Parse arguments to find their positions
+                let argIndex = 0;
+                let currentArgStart = 0;
+                let parenDepth = 0;
+                let inString: string | null = null;
+
+                for (let i = 0; i <= argsStr.length; i++) {
+                    const char = argsStr[i];
+
+                    // Handle strings to avoid breaking on commas inside them
+                    if ((char === '"' || char === "'") && (i === 0 || argsStr[i - 1] !== '\\')) {
+                        if (inString === char) inString = null;
+                        else if (!inString) inString = char;
+                    }
+
+                    if (!inString) {
+                        if (i === argsStr.length || (char === ',' && parenDepth === 0)) {
+                            if (argIndex < paramNames.length) {
+                                // Find the start of the argument text (skipping leading whitespace)
+                                let effectiveArgStart = currentArgStart;
+                                while (effectiveArgStart < i && /\s/.test(argsStr[effectiveArgStart])) {
+                                    effectiveArgStart++;
+                                }
+
+                                if (effectiveArgStart < i) {
+                                    hints.push({
+                                        position: doc.positionAt(argsStartOffset + effectiveArgStart),
+                                        label: `${paramNames[argIndex]}:`,
+                                        kind: InlayHintKind.Parameter,
+                                        paddingRight: true
+                                    });
+                                }
+                            }
+                            argIndex++;
+                            currentArgStart = i + 1;
+                        } else if (char === '(') {
+                            parenDepth++;
+                        } else if (char === ')') {
+                            parenDepth--;
+                        }
+                    }
+                }
+            }
+        }
+
+        return hints;
     });
 
     // The content of a text document has changed. This event is emitted
@@ -942,11 +1034,18 @@ try {
         descriptionJa?: string;
     }
 
+    interface TinderboxDesignator {
+        name: string;
+        description: string;
+        descriptionJa?: string;
+    }
+
 
     const lowerCaseOperators: Map<string, string> = new Map(); // Case-insensitive lookup
 
     const systemAttributes: Map<string, SystemAttribute> = new Map();
     const tinderboxDataTypes: Map<string, DataType> = new Map();
+    const tinderboxDesignators: Map<string, TinderboxDesignator> = new Map();
     // keywordNames is used for fast lookup in semantic tokens
     const keywordNames: Set<string> = new Set();
     // Reserved words for validation
@@ -957,16 +1056,14 @@ try {
     try {
         const fs = require('fs');
         const path = require('path');
+        const resourcePath = path.join(__dirname, '..', '..', '..', 'resource');
 
         // --- Load Operators from CSV ---
-        const operatorsPath = path.join(__dirname, '..', '..', 'extract_operators.csv');
-        const devOperatorsPath = path.join(__dirname, '..', '..', 'server', 'extract_operators.csv');
-        const rootOperatorsPath = path.join(__dirname, '..', '..', '..', 'extract_operators.csv');
+        const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
 
         let opCsvContent = '';
-        if (fs.existsSync(rootOperatorsPath)) opCsvContent = fs.readFileSync(rootOperatorsPath, 'utf-8');
-        else if (fs.existsSync(operatorsPath)) opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
-        else connection.console.warn('Could not find extract_operators.csv');
+        if (fs.existsSync(operatorsPath)) opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
+        else connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
 
         // Reuse CSV parser
         const parseCSV = (text: string) => {
@@ -1134,14 +1231,9 @@ try {
         }
 
         // --- Load Reserved Words from File ---
-        const reservedPathRoot = path.join(__dirname, '..', '..', '..', 'reserved_list.txt');
-        const reservedPathDev = path.join(__dirname, '..', '..', 'reserved_list.txt');
+        const reservedPath = path.join(resourcePath, 'reserved_list.txt');
 
-        let reservedPath = '';
-        if (fs.existsSync(reservedPathRoot)) reservedPath = reservedPathRoot;
-        else if (fs.existsSync(reservedPathDev)) reservedPath = reservedPathDev;
-
-        if (reservedPath) {
+        if (fs.existsSync(reservedPath)) {
             const content = fs.readFileSync(reservedPath, 'utf-8');
             content.split(/\r?\n/).forEach((line: string) => {
                 const word = line.trim();
@@ -1152,18 +1244,16 @@ try {
             });
             connection.console.log(`Loaded ${textReservedWords.size} keywords from file.`);
         } else {
-            connection.console.warn(`Could not find reserved_list.txt at ${reservedPathRoot} or ${reservedPathDev}`);
+            connection.console.warn(`Could not find reserved_list.txt at ${reservedPath}`);
         }
 
         // --- Load System Attributes ---
-        const rootPath = path.join(__dirname, '..', '..', '..', 'system_attributes.csv');
+        const attributesPath = path.join(resourcePath, 'system_attributes.csv');
         let csvContent = '';
-        if (fs.existsSync(rootPath)) {
-            csvContent = fs.readFileSync(rootPath, 'utf-8');
-        } else if (fs.existsSync('/Users/tk4o2ka/github/tinderboxlspserver/system_attributes.csv')) {
-            csvContent = fs.readFileSync('/Users/tk4o2ka/github/tinderboxlspserver/system_attributes.csv', 'utf-8');
+        if (fs.existsSync(attributesPath)) {
+            csvContent = fs.readFileSync(attributesPath, 'utf-8');
         } else {
-            connection.console.warn('Could not find system_attributes.csv');
+            connection.console.warn(`Could not find system_attributes.csv at ${attributesPath}`);
         }
 
         if (csvContent) {
@@ -1240,14 +1330,12 @@ try {
         }
 
         // --- Load Data Types ---
-        const typesPath = path.join(__dirname, '..', '..', '..', 'data_types_v2.csv');
+        const typesPath = path.join(resourcePath, 'data_types_v2.csv');
         let typesContent = '';
         if (fs.existsSync(typesPath)) {
             typesContent = fs.readFileSync(typesPath, 'utf-8');
-        } else if (fs.existsSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv')) {
-            typesContent = fs.readFileSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv', 'utf-8');
         } else {
-            connection.console.warn('Could not find data_types_v2.csv');
+            connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
         }
 
         if (typesContent) {
@@ -1271,6 +1359,31 @@ try {
                 // Handle "boolean" explicit overlap if needed, but key is safe
             }
             connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
+        }
+
+        // --- Load Designators ---
+        const designatorsPath = path.join(resourcePath, 'designator.csv');
+        let designatorsContent = '';
+        if (fs.existsSync(designatorsPath)) {
+            designatorsContent = fs.readFileSync(designatorsPath, 'utf-8');
+        } else {
+            connection.console.warn(`Could not find designator.csv at ${designatorsPath}`);
+        }
+
+        if (designatorsContent) {
+            const rows = parseCSV(designatorsContent);
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 2) continue;
+                const name = row[0].trim().replace(/^"|"$/g, '');
+                const designator: TinderboxDesignator = {
+                    name: name,
+                    description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                };
+                tinderboxDesignators.set(name.toLowerCase(), designator);
+            }
+            connection.console.log(`Loaded ${tinderboxDesignators.size} designators.`);
         }
 
     } catch (err: any) {
@@ -1740,15 +1853,9 @@ try {
                 const endOffset = match.index + match[0].length;
 
                 if (offset >= startOffset && offset <= endOffset) {
-                    // Check if we are hovering a specific part of a chain
-                    // e.g. "vList.reverse()" -> hovering "reverse"
-                    // The regex captures the whole chain "vList.reverse()"
-                    // We need to narrow down to the clicked segment.
-
                     const chain = match[0];
-                    // Find which segment offset falls into
                     let currentSegStart = startOffset;
-                    const segments = chain.split('.'); // This splits identifiers. "vList.reverse()" -> "vList", "reverse()"
+                    const segments = chain.split('.');
 
                     for (let i = 0; i < segments.length; i++) {
                         const seg = segments[i];
@@ -1756,33 +1863,69 @@ try {
                         const segEnd = currentSegStart + segLen;
 
                         if (offset >= currentSegStart && offset <= segEnd) {
-                            hoveredWord = seg.replace(/\(.*\)$/, ''); // "reverse"
+                            // --- NEW: Priority Argument/Word Inside Parentheses ---
+                            // If cursor is inside (...), try to find the word there first
+                            const parenMatch = seg.match(/\((.*)\)$/);
+                            if (parenMatch) {
+                                const argsInside = parenMatch[1];
+                                const parenStartInSeg = seg.indexOf('(');
+                                const argsStartInDoc = currentSegStart + parenStartInSeg + 1;
+                                const argsEndInDoc = argsStartInDoc + argsInside.length;
+
+                                if (offset >= argsStartInDoc && offset <= argsEndInDoc) {
+                                    // Find the specific word under cursor within parentheses
+                                    // We split by common delimiters in Tinderbox actions
+                                    const argWordPattern = /[$a-zA-Z0-9_/.]+/g;
+                                    let argMatch;
+                                    while ((argMatch = argWordPattern.exec(argsInside)) !== null) {
+                                        const argWordStart = argsStartInDoc + argMatch.index;
+                                        const argWordEnd = argWordStart + argMatch[0].length;
+                                        if (offset >= argWordStart && offset <= argWordEnd) {
+                                            const argWord = argMatch[0];
+
+                                            // PRIORITY 1: Designator
+                                            const designator = tinderboxDesignators.get(argWord.toLowerCase());
+                                            if (designator) {
+                                                const desc = (lang === 'ja' && designator.descriptionJa) ? designator.descriptionJa : designator.description;
+                                                return {
+                                                    contents: { kind: 'markdown', value: `**${designator.name}**\n\n*Designator*\n\n${desc}` },
+                                                    range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
+                                                };
+                                            }
+
+                                            // PRIORITY 2: System Attribute in args
+                                            if (argWord.startsWith('$')) {
+                                                const attr = systemAttributes.get(argWord);
+                                                if (attr) {
+                                                    const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
+                                                    return {
+                                                        contents: { kind: 'markdown', value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n\n${desc}` },
+                                                        range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
+                                                    };
+                                                }
+                                            }
+                                            // Fall through or continue to next argWord
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- Normal Segment Handling (Variable, Attribute, Operator, Type) ---
+                            hoveredWord = seg.replace(/\(.*\)$/, '');
 
                             // FIX: Check for type declaration context (preceded by :)
-                            // e.g. "var:string" or "var: list"
                             let isTypeDecl = false;
                             let scanIdx = currentSegStart - 1;
-                            while (scanIdx >= 0 && /\s/.test(content[scanIdx])) {
-                                scanIdx--;
-                            }
-                            if (scanIdx >= 0 && content[scanIdx] === ':') {
-                                isTypeDecl = true;
-                            }
+                            while (scanIdx >= 0 && /\s/.test(content[scanIdx])) scanIdx--;
+                            if (scanIdx >= 0 && content[scanIdx] === ':') isTypeDecl = true;
 
                             if (isTypeDecl) {
-                                // Look up in tinderboxDataTypes
                                 const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
                                 if (typeInfo) {
                                     const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
                                     return {
-                                        contents: {
-                                            kind: 'markdown',
-                                            value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}`
-                                        },
-                                        range: {
-                                            start: document.positionAt(currentSegStart),
-                                            end: document.positionAt(segEnd)
-                                        }
+                                        contents: { kind: 'markdown', value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}` },
+                                        range: { start: document.positionAt(currentSegStart), end: document.positionAt(segEnd) }
                                     };
                                 }
                             }

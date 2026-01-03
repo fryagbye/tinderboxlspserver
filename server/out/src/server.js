@@ -51,7 +51,17 @@ try {
                     triggerCharacters: ['(', ',']
                 },
                 // Definition Provider capability
-                definitionProvider: true
+                definitionProvider: true,
+                // Document Formatting capability
+                documentFormattingProvider: true,
+                // Document Symbol capability
+                documentSymbolProvider: true,
+                // Rename capability
+                renameProvider: {
+                    prepareProvider: true
+                },
+                // Inlay Hint capability
+                inlayHintProvider: true
             }
         };
         if (hasWorkspaceFolderCapability) {
@@ -107,6 +117,296 @@ try {
     // Only keep settings for open documents
     documents.onDidClose(e => {
         documentSettings.delete(e.document.uri);
+    });
+    connection.onDocumentFormatting((params) => {
+        const { textDocument, options } = params;
+        const doc = documents.get(textDocument.uri);
+        if (!doc) {
+            return [];
+        }
+        const text = doc.getText();
+        const lines = text.split(/\r?\n/);
+        const indentSize = options.tabSize || 4;
+        const indentChar = options.insertSpaces ? ' '.repeat(indentSize) : '\t';
+        let currentIndent = 0;
+        const newLines = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            let trimmed = line.trim();
+            if (trimmed.length === 0) {
+                continue;
+            }
+            // --- Spacing Rule: 2 blank lines before function ---
+            if (trimmed.startsWith('function') && newLines.length > 0) {
+                // Ensure exactly two blank lines before function
+                while (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+                    newLines.pop();
+                }
+                newLines.push('', '');
+            }
+            // Decrease indent if line starts with closing brace
+            // We check for '}' at the very beginning of the trimmed line
+            if (trimmed.startsWith('}')) {
+                currentIndent = Math.max(0, currentIndent - 1);
+            }
+            // Apply current indentation
+            let newLine = indentChar.repeat(currentIndent) + trimmed;
+            // Space optimization for operators (simple version)
+            // Ensure space around =, +, -, *, /, ==, !=, <, >, <=, >=
+            // We only apply this if it doesn't look like a comment or a string start
+            if (!trimmed.startsWith('//') && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
+                // This is a very simplified approach. A full tokenizer would be better.
+                // For now, let's just do common ones that are safe.
+                newLine = newLine
+                    .replace(/\s*([=+*\/<>!]=|[=+*\/<>])\s*/g, ' $1 ') // Add spaces around operators
+                    .replace(/\s*,\s*/g, ', ') // Space after comma
+                    .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
+                    .replace(/ {2,}/g, ' '); // Collapse multiple spaces (but keep indent)
+                // Restore indentation which might have been affected by collapse
+                const indent = indentChar.repeat(currentIndent);
+                newLine = indent + newLine.trim();
+                trimmed = newLine.trim(); // Update trimmed for subsequent checks
+            }
+            // --- Semicolon Completion (Heuristic) ---
+            if (!trimmed.endsWith(';') &&
+                !trimmed.endsWith('{') &&
+                !trimmed.endsWith('}') &&
+                !trimmed.endsWith(',') &&
+                !trimmed.endsWith('(') &&
+                !trimmed.match(/^function\s+/) &&
+                !trimmed.match(/^(if|while|each|for)\b/) &&
+                !/(^|\s)else$/.test(trimmed) &&
+                !/[+\-*/|&=]$/.test(trimmed)) {
+                // Check if it ends with alphanumeric or closing paren/quote
+                if (/[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
+                    // Check next line (if any) doesn't start with operator or block
+                    let nextIdx = i + 1;
+                    let nextLine = '';
+                    while (nextIdx < lines.length) {
+                        nextLine = lines[nextIdx].trim();
+                        if (nextLine.length > 0)
+                            break;
+                        nextIdx++;
+                    }
+                    if (!/^[\+\-\*\/\.\|&=]/.test(nextLine) && !nextLine.startsWith('{')) {
+                        newLine += ';';
+                        trimmed += ';'; // Update trimmed for brace check
+                    }
+                }
+            }
+            newLines.push(newLine);
+            // --- Spacing Rule: 1 blank line after var declaration block ---
+            if (trimmed.startsWith('var:')) {
+                let nextIdx = i + 1;
+                let nextTrimmed = '';
+                while (nextIdx < lines.length) {
+                    nextTrimmed = lines[nextIdx].trim();
+                    if (nextTrimmed.length > 0)
+                        break;
+                    nextIdx++;
+                }
+                if (nextTrimmed.length > 0 && !nextTrimmed.startsWith('var:')) {
+                    newLines.push('');
+                }
+            }
+            // Increase indent if line ends with opening brace
+            if (trimmed.endsWith('{')) {
+                currentIndent++;
+            }
+        }
+        return [
+            node_1.TextEdit.replace(node_1.Range.create(doc.positionAt(0), doc.positionAt(text.length)), newLines.join('\n'))
+        ];
+    });
+    connection.onDocumentSymbol((params) => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc) {
+            return [];
+        }
+        const text = doc.getText();
+        const symbols = [];
+        // 1. Function patterns: function Name(...)
+        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        let match;
+        // Reset index for search
+        functionPattern.lastIndex = 0;
+        while ((match = functionPattern.exec(text)) !== null) {
+            const name = match[1];
+            const startPos = doc.positionAt(match.index);
+            const endPos = doc.positionAt(match.index + match[0].length);
+            const range = node_1.Range.create(startPos, endPos);
+            // Selection range points to the name specifically
+            const nameOffset = match[0].indexOf(name);
+            const selectionRange = node_1.Range.create(doc.positionAt(match.index + nameOffset), doc.positionAt(match.index + nameOffset + name.length));
+            symbols.push(node_1.DocumentSymbol.create(name, undefined, node_1.SymbolKind.Function, range, selectionRange));
+        }
+        // 2. Variable patterns: var:type Name
+        const varPattern = /var(?::[a-zA-Z0-9]+)?\s+([a-zA-Z0-9_]+)/g;
+        varPattern.lastIndex = 0;
+        while ((match = varPattern.exec(text)) !== null) {
+            const name = match[1];
+            const startPos = doc.positionAt(match.index);
+            const endPos = doc.positionAt(match.index + match[0].length);
+            const range = node_1.Range.create(startPos, endPos);
+            const nameOffset = match[0].indexOf(name);
+            const selectionRange = node_1.Range.create(doc.positionAt(match.index + nameOffset), doc.positionAt(match.index + nameOffset + name.length));
+            symbols.push(node_1.DocumentSymbol.create(name, undefined, node_1.SymbolKind.Variable, range, selectionRange));
+        }
+        return symbols;
+    });
+    connection.onPrepareRename((params) => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc)
+            return null;
+        const text = doc.getText();
+        const offset = doc.offsetAt(params.position);
+        // Find the word at the position
+        const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
+        const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
+        const word = before + after;
+        if (!word || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(word)) {
+            return null;
+        }
+        // Find the range of the word
+        const start = offset - before.length;
+        return {
+            range: node_1.Range.create(doc.positionAt(start), doc.positionAt(start + word.length)),
+            placeholder: word
+        };
+    });
+    connection.onRenameRequest((params) => {
+        const { textDocument, position, newName } = params;
+        const doc = documents.get(textDocument.uri);
+        if (!doc)
+            return null;
+        const text = doc.getText();
+        const offset = doc.offsetAt(position);
+        const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
+        const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
+        const oldName = before + after;
+        if (!oldName)
+            return null;
+        const edits = [];
+        // Determine scope: Global or current function
+        // This is a simplified scope detection
+        let functionScope = null;
+        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/g;
+        let match;
+        while ((match = functionPattern.exec(text)) !== null) {
+            let braceCount = 1;
+            let endOffset = match.index + match[0].length;
+            while (braceCount > 0 && endOffset < text.length) {
+                if (text[endOffset] === '{')
+                    braceCount++;
+                else if (text[endOffset] === '}')
+                    braceCount--;
+                endOffset++;
+            }
+            if (offset >= match.index && offset <= endOffset) {
+                functionScope = { start: match.index, end: endOffset };
+                break;
+            }
+        }
+        // Find all occurrences of oldName in the determined scope
+        // We use a regex that ensures it's a whole word and not inside a string or comment
+        const searchPattern = new RegExp(`\\b${oldName}\\b`, 'g');
+        const searchRange = functionScope ? text.slice(functionScope.start, functionScope.end) : text;
+        const searchOffset = functionScope ? functionScope.start : 0;
+        let searchMatch;
+        while ((searchMatch = searchPattern.exec(searchRange)) !== null) {
+            const absoluteIndex = searchMatch.index + searchOffset;
+            // Basic check to see if it's inside a string or comment (very simplified)
+            const textToMatch = text.slice(0, absoluteIndex);
+            const isInString = (textToMatch.split('"').length % 2 === 0) || (textToMatch.split("'").length % 2 === 0);
+            const isInComment = textToMatch.split('\n').pop()?.includes('//');
+            if (!isInString && !isInComment) {
+                edits.push(node_1.TextEdit.replace(node_1.Range.create(doc.positionAt(absoluteIndex), doc.positionAt(absoluteIndex + oldName.length)), newName));
+            }
+        }
+        return {
+            changes: {
+                [textDocument.uri]: edits
+            }
+        };
+    });
+    connection.languages.inlayHint.on((params) => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc)
+            return [];
+        const text = doc.getText();
+        const hints = [];
+        // 1. Gather all local function definitions to get parameter names
+        const functions = new Map();
+        const funcDefPattern = /\bfunction\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        let match;
+        while ((match = funcDefPattern.exec(text)) !== null) {
+            const funcName = match[1];
+            const paramsStr = match[2];
+            // Parameter can be "type Name" or just "Name"
+            const paramNames = paramsStr.split(',').map(p => {
+                const parts = p.trim().split(/\s+/);
+                return parts[parts.length - 1];
+            }).filter(p => p && /^[a-zA-Z0-9_]+$/.test(p));
+            functions.set(funcName, paramNames);
+        }
+        // 2. Find function calls and provide hints
+        const callPattern = /\b([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        callPattern.lastIndex = 0;
+        while ((match = callPattern.exec(text)) !== null) {
+            const funcName = match[1];
+            // Skip keywords that look like function calls
+            if (['function', 'if', 'while', 'each', 'for', 'return', 'var'].includes(funcName)) {
+                continue;
+            }
+            const argsStr = match[2];
+            const argsStartOffset = match.index + match[0].indexOf('(') + 1;
+            if (functions.has(funcName)) {
+                const paramNames = functions.get(funcName);
+                // Parse arguments to find their positions
+                let argIndex = 0;
+                let currentArgStart = 0;
+                let parenDepth = 0;
+                let inString = null;
+                for (let i = 0; i <= argsStr.length; i++) {
+                    const char = argsStr[i];
+                    // Handle strings to avoid breaking on commas inside them
+                    if ((char === '"' || char === "'") && (i === 0 || argsStr[i - 1] !== '\\')) {
+                        if (inString === char)
+                            inString = null;
+                        else if (!inString)
+                            inString = char;
+                    }
+                    if (!inString) {
+                        if (i === argsStr.length || (char === ',' && parenDepth === 0)) {
+                            if (argIndex < paramNames.length) {
+                                // Find the start of the argument text (skipping leading whitespace)
+                                let effectiveArgStart = currentArgStart;
+                                while (effectiveArgStart < i && /\s/.test(argsStr[effectiveArgStart])) {
+                                    effectiveArgStart++;
+                                }
+                                if (effectiveArgStart < i) {
+                                    hints.push({
+                                        position: doc.positionAt(argsStartOffset + effectiveArgStart),
+                                        label: `${paramNames[argIndex]}:`,
+                                        kind: node_1.InlayHintKind.Parameter,
+                                        paddingRight: true
+                                    });
+                                }
+                            }
+                            argIndex++;
+                            currentArgStart = i + 1;
+                        }
+                        else if (char === '(') {
+                            parenDepth++;
+                        }
+                        else if (char === ')') {
+                            parenDepth--;
+                        }
+                    }
+                }
+            }
+        }
+        return hints;
     });
     // The content of a text document has changed. This event is emitted
     // when the text document first opened or when its content has changed.
@@ -536,6 +836,7 @@ try {
     const lowerCaseOperators = new Map(); // Case-insensitive lookup
     const systemAttributes = new Map();
     const tinderboxDataTypes = new Map();
+    const tinderboxDesignators = new Map();
     // keywordNames is used for fast lookup in semantic tokens
     const keywordNames = new Set();
     // Reserved words for validation
@@ -545,17 +846,14 @@ try {
     try {
         const fs = require('fs');
         const path = require('path');
+        const resourcePath = path.join(__dirname, '..', '..', '..', 'resource');
         // --- Load Operators from CSV ---
-        const operatorsPath = path.join(__dirname, '..', '..', 'extract_operators.csv');
-        const devOperatorsPath = path.join(__dirname, '..', '..', 'server', 'extract_operators.csv');
-        const rootOperatorsPath = path.join(__dirname, '..', '..', '..', 'extract_operators.csv');
+        const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
         let opCsvContent = '';
-        if (fs.existsSync(rootOperatorsPath))
-            opCsvContent = fs.readFileSync(rootOperatorsPath, 'utf-8');
-        else if (fs.existsSync(operatorsPath))
+        if (fs.existsSync(operatorsPath))
             opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
         else
-            connection.console.warn('Could not find extract_operators.csv');
+            connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
         // Reuse CSV parser
         const parseCSV = (text) => {
             const rows = [];
@@ -728,14 +1026,8 @@ try {
             }
         }
         // --- Load Reserved Words from File ---
-        const reservedPathRoot = path.join(__dirname, '..', '..', '..', 'reserved_list.txt');
-        const reservedPathDev = path.join(__dirname, '..', '..', 'reserved_list.txt');
-        let reservedPath = '';
-        if (fs.existsSync(reservedPathRoot))
-            reservedPath = reservedPathRoot;
-        else if (fs.existsSync(reservedPathDev))
-            reservedPath = reservedPathDev;
-        if (reservedPath) {
+        const reservedPath = path.join(resourcePath, 'reserved_list.txt');
+        if (fs.existsSync(reservedPath)) {
             const content = fs.readFileSync(reservedPath, 'utf-8');
             content.split(/\r?\n/).forEach((line) => {
                 const word = line.trim();
@@ -747,19 +1039,16 @@ try {
             connection.console.log(`Loaded ${textReservedWords.size} keywords from file.`);
         }
         else {
-            connection.console.warn(`Could not find reserved_list.txt at ${reservedPathRoot} or ${reservedPathDev}`);
+            connection.console.warn(`Could not find reserved_list.txt at ${reservedPath}`);
         }
         // --- Load System Attributes ---
-        const rootPath = path.join(__dirname, '..', '..', '..', 'system_attributes.csv');
+        const attributesPath = path.join(resourcePath, 'system_attributes.csv');
         let csvContent = '';
-        if (fs.existsSync(rootPath)) {
-            csvContent = fs.readFileSync(rootPath, 'utf-8');
-        }
-        else if (fs.existsSync('/Users/tk4o2ka/github/tinderboxlspserver/system_attributes.csv')) {
-            csvContent = fs.readFileSync('/Users/tk4o2ka/github/tinderboxlspserver/system_attributes.csv', 'utf-8');
+        if (fs.existsSync(attributesPath)) {
+            csvContent = fs.readFileSync(attributesPath, 'utf-8');
         }
         else {
-            connection.console.warn('Could not find system_attributes.csv');
+            connection.console.warn(`Could not find system_attributes.csv at ${attributesPath}`);
         }
         if (csvContent) {
             // Simple CSV parser handling multiline quotes
@@ -837,16 +1126,13 @@ try {
             connection.console.log(`Loaded ${systemAttributes.size} system attributes.`);
         }
         // --- Load Data Types ---
-        const typesPath = path.join(__dirname, '..', '..', '..', 'data_types_v2.csv');
+        const typesPath = path.join(resourcePath, 'data_types_v2.csv');
         let typesContent = '';
         if (fs.existsSync(typesPath)) {
             typesContent = fs.readFileSync(typesPath, 'utf-8');
         }
-        else if (fs.existsSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv')) {
-            typesContent = fs.readFileSync('/Users/tk4o2ka/github/tinderboxlspserver/data_types_v2.csv', 'utf-8');
-        }
         else {
-            connection.console.warn('Could not find data_types_v2.csv');
+            connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
         }
         if (typesContent) {
             const rows = parseCSV(typesContent);
@@ -869,6 +1155,31 @@ try {
                 // Handle "boolean" explicit overlap if needed, but key is safe
             }
             connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
+        }
+        // --- Load Designators ---
+        const designatorsPath = path.join(resourcePath, 'designator.csv');
+        let designatorsContent = '';
+        if (fs.existsSync(designatorsPath)) {
+            designatorsContent = fs.readFileSync(designatorsPath, 'utf-8');
+        }
+        else {
+            connection.console.warn(`Could not find designator.csv at ${designatorsPath}`);
+        }
+        if (designatorsContent) {
+            const rows = parseCSV(designatorsContent);
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 2)
+                    continue;
+                const name = row[0].trim().replace(/^"|"$/g, '');
+                const designator = {
+                    name: name,
+                    description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                };
+                tinderboxDesignators.set(name.toLowerCase(), designator);
+            }
+            connection.console.log(`Loaded ${tinderboxDesignators.size} designators.`);
         }
     }
     catch (err) {
@@ -1308,44 +1619,73 @@ try {
             const startOffset = match.index;
             const endOffset = match.index + match[0].length;
             if (offset >= startOffset && offset <= endOffset) {
-                // Check if we are hovering a specific part of a chain
-                // e.g. "vList.reverse()" -> hovering "reverse"
-                // The regex captures the whole chain "vList.reverse()"
-                // We need to narrow down to the clicked segment.
                 const chain = match[0];
-                // Find which segment offset falls into
                 let currentSegStart = startOffset;
-                const segments = chain.split('.'); // This splits identifiers. "vList.reverse()" -> "vList", "reverse()"
+                const segments = chain.split('.');
                 for (let i = 0; i < segments.length; i++) {
                     const seg = segments[i];
                     const segLen = seg.length;
                     const segEnd = currentSegStart + segLen;
                     if (offset >= currentSegStart && offset <= segEnd) {
-                        hoveredWord = seg.replace(/\(.*\)$/, ''); // "reverse"
+                        // --- NEW: Priority Argument/Word Inside Parentheses ---
+                        // If cursor is inside (...), try to find the word there first
+                        const parenMatch = seg.match(/\((.*)\)$/);
+                        if (parenMatch) {
+                            const argsInside = parenMatch[1];
+                            const parenStartInSeg = seg.indexOf('(');
+                            const argsStartInDoc = currentSegStart + parenStartInSeg + 1;
+                            const argsEndInDoc = argsStartInDoc + argsInside.length;
+                            if (offset >= argsStartInDoc && offset <= argsEndInDoc) {
+                                // Find the specific word under cursor within parentheses
+                                // We split by common delimiters in Tinderbox actions
+                                const argWordPattern = /[$a-zA-Z0-9_/.]+/g;
+                                let argMatch;
+                                while ((argMatch = argWordPattern.exec(argsInside)) !== null) {
+                                    const argWordStart = argsStartInDoc + argMatch.index;
+                                    const argWordEnd = argWordStart + argMatch[0].length;
+                                    if (offset >= argWordStart && offset <= argWordEnd) {
+                                        const argWord = argMatch[0];
+                                        // PRIORITY 1: Designator
+                                        const designator = tinderboxDesignators.get(argWord.toLowerCase());
+                                        if (designator) {
+                                            const desc = (lang === 'ja' && designator.descriptionJa) ? designator.descriptionJa : designator.description;
+                                            return {
+                                                contents: { kind: 'markdown', value: `**${designator.name}**\n\n*Designator*\n\n${desc}` },
+                                                range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
+                                            };
+                                        }
+                                        // PRIORITY 2: System Attribute in args
+                                        if (argWord.startsWith('$')) {
+                                            const attr = systemAttributes.get(argWord);
+                                            if (attr) {
+                                                const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
+                                                return {
+                                                    contents: { kind: 'markdown', value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n\n${desc}` },
+                                                    range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
+                                                };
+                                            }
+                                        }
+                                        // Fall through or continue to next argWord
+                                    }
+                                }
+                            }
+                        }
+                        // --- Normal Segment Handling (Variable, Attribute, Operator, Type) ---
+                        hoveredWord = seg.replace(/\(.*\)$/, '');
                         // FIX: Check for type declaration context (preceded by :)
-                        // e.g. "var:string" or "var: list"
                         let isTypeDecl = false;
                         let scanIdx = currentSegStart - 1;
-                        while (scanIdx >= 0 && /\s/.test(content[scanIdx])) {
+                        while (scanIdx >= 0 && /\s/.test(content[scanIdx]))
                             scanIdx--;
-                        }
-                        if (scanIdx >= 0 && content[scanIdx] === ':') {
+                        if (scanIdx >= 0 && content[scanIdx] === ':')
                             isTypeDecl = true;
-                        }
                         if (isTypeDecl) {
-                            // Look up in tinderboxDataTypes
                             const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
                             if (typeInfo) {
                                 const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
                                 return {
-                                    contents: {
-                                        kind: 'markdown',
-                                        value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}`
-                                    },
-                                    range: {
-                                        start: document.positionAt(currentSegStart),
-                                        end: document.positionAt(segEnd)
-                                    }
+                                    contents: { kind: 'markdown', value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}` },
+                                    range: { start: document.positionAt(currentSegStart), end: document.positionAt(segEnd) }
                                 };
                             }
                         }
