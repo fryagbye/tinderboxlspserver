@@ -801,21 +801,28 @@ function evaluateExpressionType(expr, locals) {
         const right = expr.substring(lastDotIndex + 1); // methodName or methodName(...)
         const leftType = evaluateExpressionType(left, locals);
         if (leftType) {
-            const methodName = right.replace(/\(.*\)$/, '').trim();
+            const methodName = right.replace(/\(.*\)$/, '').replace(/\[.*\]$/, '').trim();
             // Look up method on leftType
             const methods = typeMethods.get(leftType.toLowerCase());
             if (methods) {
                 const op = methods.find(m => {
                     // FIX: CSV names often have (), e.g. "String.lowercase()".
                     // User might type "$Name.lowercase".
-                    // We must strip parens from the DEFINITION for comparison.
-                    const suffix = m.name.split('.').pop()?.replace(/\(.*\)$/, '') || m.name;
+                    // We must strip parens/brackets from the DEFINITION for comparison.
+                    const suffix = m.name.split('.').pop()?.replace(/\(.*\)$/, '').replace(/\[.*\]$/, '') || m.name;
                     return suffix === methodName;
                 });
-                // Return type from CSV is often capitalized "List", "String" -> convert to lowercase
+                // Return type logic
                 if (op && op.returnType) {
                     return op.returnType.toLowerCase();
                 }
+            }
+            // Fallback for context-switching methods on strings
+            if (leftType.toLowerCase() === 'string') {
+                if (methodName === 'json')
+                    return 'json';
+                if (methodName === 'xml')
+                    return 'xml';
             }
         }
     }
@@ -941,15 +948,22 @@ async function loadResources() {
                         return;
                     const isDotOp = row[13]?.toLowerCase() === 'true';
                     const opScope = row[2]?.trim() || 'Item';
+                    let returnType = row[4] || '';
+                    if (returnType === 'source context dependent') {
+                        if (label.toLowerCase().startsWith('json.'))
+                            returnType = 'json';
+                        else if (label.toLowerCase().startsWith('xml.'))
+                            returnType = 'xml';
+                    }
                     const op = {
                         name: label,
                         type: row[3], // OpType
-                        returnType: row[4], // OpReturnType
+                        returnType: returnType, // OpReturnType
                         isDotOp: isDotOp,
                         opScope: opScope,
                         signature: label + (row[11] && parseInt(row[11]) > 0 ? '(...)' : ''), // Simple signature approximation
-                        description: row[23] || '',
-                        descriptionJa: row[24],
+                        description: row[23] ? row[23].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : '',
+                        descriptionJa: row[24] ? row[24].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined,
                         kind: node_1.CompletionItemKind.Function // Default
                     };
                     // Refine Kind
@@ -957,99 +971,111 @@ async function loadResources() {
                         op.kind = node_1.CompletionItemKind.Keyword;
                     }
                     tinderboxOperators.set(label, op);
-                    // Populate typeMethods based on OpScope matching
-                    if (isDotOp) {
+                    const lowerName = label.toLowerCase();
+                    // Populate typeMethods based on Prefix or OpScope
+                    if (isDotOp || lowerName.startsWith('json.') || lowerName.startsWith('xml.')) {
                         const scope = opScope.toLowerCase();
-                        // Rules for Scope -> Types
-                        // Rules for Scope -> Types
-                        if (scope === 'item') {
-                            // Heuristic Fix: The CSV often marks type-specific operators as "Item".
-                            // If the name starts with "List.", "String.", etc., treat it as that type.
-                            const lowerName = label.toLowerCase();
-                            if (lowerName.startsWith('list.')) {
-                                addOpToType('list', op);
-                                addOpToType('set', op); // Assuming lists/sets share
-                            }
-                            else if (lowerName.startsWith('set.')) {
-                                addOpToType('set', op);
-                                addOpToType('list', op);
-                            }
-                            else if (lowerName.startsWith('string.')) {
+                        // Priority 1: Prefix-based association (e.g. "List.each" -> list)
+                        const prefixMatch = label.match(/^([a-zA-Z0-9]+)\./);
+                        if (prefixMatch) {
+                            const prefixType = prefixMatch[1].toLowerCase();
+                            addOpToType(prefixType, op);
+                            // Special case: JSON and XML operators are often used as dot-operators on strings (e.g. $Text.json.each)
+                            if (prefixType === 'json' || prefixType === 'xml') {
                                 addOpToType('string', op);
                             }
-                            else if (lowerName.startsWith('number.')) {
-                                addOpToType('number', op);
-                            }
-                            else if (lowerName.startsWith('date.')) {
-                                addOpToType('date', op);
-                            }
-                            else if (lowerName.startsWith('color.')) {
-                                addOpToType('color', op);
-                            }
-                            else if (lowerName.startsWith('boolean.')) {
-                                addOpToType('boolean', op);
-                            }
-                            else if (lowerName.startsWith('dictionary.')) {
-                                addOpToType('dictionary', op);
-                            }
-                            else if (lowerName.startsWith('interval.')) {
-                                addOpToType('interval', op);
+                            else if (prefixType === 'list' || prefixType === 'set') {
+                                addOpToType('list', op);
+                                addOpToType('set', op);
                             }
                             else {
-                                // Truly generic "Item" scope
-                                ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
+                                addOpToType(prefixType, op);
                             }
                         }
-                        else if (scope === 'list') {
+                        else if (lowerName.startsWith('list.')) {
                             addOpToType('list', op);
                             addOpToType('set', op);
                         }
-                        else if (scope === 'set') {
+                        else if (lowerName.startsWith('set.')) {
                             addOpToType('set', op);
-                            addOpToType('list', op); // Assuming Set methods often work on Lists too or vice versa? User said "List- or Set-type" usually implies both.
+                            addOpToType('list', op);
                         }
-                        else {
-                            // Direct mapping: "String", "Number", "Color" etc.
-                            addOpToType(scope, op);
+                        else if (lowerName.startsWith('string.')) {
+                            addOpToType('string', op);
                         }
-                        // Also populate dotOperatorsMap (Suffix based) for hover fallback
-                        // We extract suffix after LAST dot
-                        const dotIdx = label.lastIndexOf('.');
-                        const cleanLabel = label.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
-                        if (dotIdx > 0) {
-                            const suffix = label.substring(dotIdx + 1);
-                            const cleanSuffix = suffix.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
-                            if (cleanSuffix) {
-                                if (!dotOperatorsMap.has(cleanSuffix)) {
-                                    dotOperatorsMap.set(cleanSuffix, []);
-                                }
-                                dotOperatorsMap.get(cleanSuffix)?.push(op);
+                        else if (lowerName.startsWith('number.')) {
+                            addOpToType('number', op);
+                        }
+                        else if (lowerName.startsWith('date.')) {
+                            addOpToType('date', op);
+                        }
+                        else if (lowerName.startsWith('color.')) {
+                            addOpToType('color', op);
+                        }
+                        else if (lowerName.startsWith('boolean.')) {
+                            addOpToType('boolean', op);
+                        }
+                        else if (lowerName.startsWith('dictionary.')) {
+                            addOpToType('dictionary', op);
+                        }
+                        else if (lowerName.startsWith('interval.')) {
+                            addOpToType('interval', op);
+                        }
+                        else if (isDotOp) {
+                            // Priority 2: Fallback to Scope-based association
+                            if (scope === 'item') {
+                                // Truly generic "Item" scope
+                                ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
                             }
-                        }
-                        else {
-                            if (cleanLabel) {
-                                if (!dotOperatorsMap.has(cleanLabel)) {
-                                    dotOperatorsMap.set(cleanLabel, []);
-                                }
-                                dotOperatorsMap.get(cleanLabel)?.push(op);
+                            else if (scope === 'list') {
+                                addOpToType('list', op);
+                                addOpToType('set', op);
+                            }
+                            else if (scope === 'set') {
+                                addOpToType('set', op);
+                                addOpToType('list', op);
+                            }
+                            else {
+                                // Direct mapping: "String", "Number", "Color" etc.
+                                addOpToType(scope, op);
                             }
                         }
                     }
+                    // Also populate dotOperatorsMap (Suffix based) for hover fallback
+                    // We extract suffix after LAST dot
+                    const dotIdx = label.lastIndexOf('.');
+                    const cleanLabel = label.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                    if (dotIdx > 0) {
+                        const suffix = label.substring(dotIdx + 1);
+                        const cleanSuffix = suffix.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                        if (cleanSuffix) {
+                            if (!dotOperatorsMap.has(cleanSuffix)) {
+                                dotOperatorsMap.set(cleanSuffix, []);
+                            }
+                            dotOperatorsMap.get(cleanSuffix)?.push(op);
+                        }
+                    }
+                    else {
+                        if (cleanLabel) {
+                            if (!dotOperatorsMap.has(cleanLabel)) {
+                                dotOperatorsMap.set(cleanLabel, []);
+                            }
+                            dotOperatorsMap.get(cleanLabel)?.push(op);
+                        }
+                    }
                     // OpFamily logic (independent of IsDotOp, usually for static access like Color.blue)
-                    const dotIdx = label.indexOf('.');
-                    if (dotIdx > 0 && !label.includes(' ')) {
-                        const familyName = label.substring(0, dotIdx);
+                    const dotIdx2 = label.indexOf('.');
+                    if (dotIdx2 > 0 && !label.includes(' ')) {
+                        const familyName = label.substring(0, dotIdx2);
                         if (!operatorFamilies.has(familyName)) {
                             operatorFamilies.set(familyName, []);
                         }
                         // Avoid duplicates
-                        const member = label.substring(dotIdx + 1);
+                        const member = label.substring(dotIdx2 + 1);
                         if (!operatorFamilies.get(familyName)?.includes(member)) {
                             operatorFamilies.get(familyName)?.push(member);
                         }
                     }
-                    tinderboxOperators.set(label, op);
-                    lowerCaseOperators.set(label.toLowerCase(), label);
                     successCount++;
                 }
             });
@@ -1113,8 +1139,8 @@ async function loadResources() {
                     group: row[3],
                     defaultValue: row[2],
                     readOnly: row[6].toLowerCase() === 'true',
-                    description: row[17] ? row[17].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n') : '',
-                    descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    description: row[17] ? row[17].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : '',
+                    descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
                 };
                 systemAttributes.set(name, attr);
                 keywordNames.add(name); // Add to semantic tokens list
@@ -1144,8 +1170,8 @@ async function loadResources() {
                     continue;
                 const dataType = {
                     name: rawName,
-                    description: row[1].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n'),
-                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
                 };
                 tinderboxDataTypes.set(typeKey, dataType);
                 // Handle "boolean" explicit overlap if needed, but key is safe
@@ -1793,7 +1819,8 @@ connection.onHover(async (textDocumentPosition) => {
                         // FALLBACK: Try dotOperatorsMap (Global Suffix match) if specific type inference failed or didn't yield result
                         const ops = dotOperatorsMap.get(hoveredWord);
                         if (ops && ops.length > 0) {
-                            const op = ops[0]; // Take first match for now
+                            // Fix: Prefer standard operators over JSON/XML in global fallback
+                            const op = ops.find(o => !o.name.toLowerCase().startsWith('json.') && !o.name.toLowerCase().startsWith('xml.')) || ops[0];
                             const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
                             return {
                                 contents: {

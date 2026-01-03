@@ -52,6 +52,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 ## Release Notes
 
+### 0.2.1
+- Fix: Resolved hover information mismatch for `.each()` operators by refining type inference and context-aware matching (e.g., correctly distinguishing between `list.each`, `JSON.each`, and `XML.each`).
+
 ### 0.2.0
 - Feature: **Color Support** (Completion and Hover for defined colors).
 - Feature: Color hex code display in hover.

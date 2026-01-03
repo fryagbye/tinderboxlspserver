@@ -1,6 +1,10 @@
 # Change Log
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
+ 
+## [0.2.1] - 2026-01-04
+### Fixed
+- **Hover**: Improved accuracy for `.each()` operators by refining operator-to-type association and enhancing type inference for JSON and XML contexts (e.g., distinguishing between `list.each`, `JSON.each`, and `XML.each` when used on attributes).
 
 ## [0.2.0] - 2026-01-03
 ### Added

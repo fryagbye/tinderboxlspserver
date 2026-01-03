@@ -13,3 +13,7 @@ server/tsconfig.json
 client/src/**
 client/tsconfig.json
 .agent/**
+.nvimlog
+tinderboxlsp.code-workspace
+test.adc
+test_format.tbxc
