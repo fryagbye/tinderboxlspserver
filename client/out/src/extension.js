@@ -6,8 +6,7 @@ const path = require("path");
 const vscode_1 = require("vscode");
 const node_1 = require("vscode-languageclient/node");
 let client;
-function activate(context) {
-    // The server is implemented in node
+async function activate(context) {
     // The server is implemented in node
     const serverModule = context.asAbsolutePath(path.join('server', 'out', 'src', 'server.js'));
     // The debug options for the server
@@ -35,7 +34,7 @@ function activate(context) {
     // Create the language client and start the client.
     client = new node_1.LanguageClient('tinderboxActionCodeServer', 'Tinderbox Action Code Server', serverOptions, clientOptions);
     // Start the client. This will also launch the server
-    client.start();
+    await client.start();
 }
 function deactivate() {
     if (!client) {
