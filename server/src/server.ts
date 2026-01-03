@@ -34,6 +34,8 @@ import {
 import {
     TextDocument
 } from 'vscode-languageserver-textdocument';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -1053,222 +1055,21 @@ try {
     // Reserved words strictly from file (for Completion)
     const textReservedWords: Set<string> = new Set();
 
-    try {
-        const fs = require('fs');
-        const path = require('path');
-        const resourcePath = path.join(__dirname, '..', '..', '..', 'resource');
+    function loadResources() {
+        try {
+            const resourcePath = path.join(__dirname, '..', '..', '..', 'resource');
 
-        // --- Load Operators from CSV ---
-        const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
-
-        let opCsvContent = '';
-        if (fs.existsSync(operatorsPath)) opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
-        else connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
-
-        // Reuse CSV parser
-        const parseCSV = (text: string) => {
-            const rows = [];
-            let currentRow = [];
-            let currentField = '';
-            let insideQuotes = false;
-            for (let i = 0; i < text.length; i++) {
-                const char = text[i];
-                const nextChar = text[i + 1];
-                if (char === '"') {
-                    if (insideQuotes && nextChar === '"') {
-                        currentField += '"';
-                        i++;
-                    } else {
-                        insideQuotes = !insideQuotes;
-                    }
-                } else if (char === ',' && !insideQuotes) {
-                    currentRow.push(currentField);
-                    currentField = '';
-                } else if ((char === '\r' || char === '\n') && !insideQuotes) {
-                    if (char === '\r' && nextChar === '\n') i++;
-                    currentRow.push(currentField);
-                    rows.push(currentRow);
-                    currentRow = [];
-                    currentField = '';
-                } else {
-                    currentField += char;
-                }
-            }
-            if (currentField || currentRow.length > 0) {
-                currentRow.push(currentField);
-                rows.push(currentRow);
-            }
-            return rows;
-        };
-
-        if (opCsvContent) {
-            const rows = parseCSV(opCsvContent);
-            // Migrated logic:
-
-            let successCount = 0;
-            rows.forEach((row, index) => {
-                if (index === 0) return; // Skip header
-                if (row.length >= 5) {
-                    const label = row[0].trim();
-                    // Fix: Skip empty labels or comments (if any)
-                    if (!label || label.startsWith('#')) return;
-
-                    const isDotOp = row[13]?.toLowerCase() === 'true';
-                    const opScope = row[2]?.trim() || 'Item';
-
-                    const op: TinderboxOperator = {
-                        name: label,
-                        type: row[3], // OpType
-                        returnType: row[4], // OpReturnType
-                        isDotOp: isDotOp,
-                        opScope: opScope,
-                        signature: label + (row[11] && parseInt(row[11]) > 0 ? '(...)' : ''), // Simple signature approximation
-                        description: row[23] || '',
-                        descriptionJa: row[24],
-                        kind: CompletionItemKind.Function // Default
-                    };
-
-                    // Refine Kind
-                    if (op.type.toLowerCase().includes('cond')) {
-                        op.kind = CompletionItemKind.Keyword;
-                    }
-
-                    tinderboxOperators.set(label, op);
-
-                    // Populate typeMethods based on OpScope matching
-                    if (isDotOp) {
-                        const scope = opScope.toLowerCase();
-
-                        // Rules for Scope -> Types
-                        // Rules for Scope -> Types
-                        if (scope === 'item') {
-                            // Heuristic Fix: The CSV often marks type-specific operators as "Item".
-                            // If the name starts with "List.", "String.", etc., treat it as that type.
-                            const lowerName = label.toLowerCase();
-                            if (lowerName.startsWith('list.')) {
-                                addOpToType('list', op);
-                                addOpToType('set', op); // Assuming lists/sets share
-                            } else if (lowerName.startsWith('set.')) {
-                                addOpToType('set', op);
-                                addOpToType('list', op);
-                            } else if (lowerName.startsWith('string.')) {
-                                addOpToType('string', op);
-                            } else if (lowerName.startsWith('number.')) {
-                                addOpToType('number', op);
-                            } else if (lowerName.startsWith('date.')) {
-                                addOpToType('date', op);
-                            } else if (lowerName.startsWith('color.')) {
-                                addOpToType('color', op);
-                            } else if (lowerName.startsWith('boolean.')) {
-                                addOpToType('boolean', op);
-                            } else if (lowerName.startsWith('dictionary.')) {
-                                addOpToType('dictionary', op);
-                            } else if (lowerName.startsWith('interval.')) {
-                                addOpToType('interval', op);
-                            } else {
-                                // Truly generic "Item" scope
-                                ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
-                            }
-                        } else if (scope === 'list') {
-                            addOpToType('list', op);
-                            addOpToType('set', op);
-                        } else if (scope === 'set') {
-                            addOpToType('set', op);
-                            addOpToType('list', op); // Assuming Set methods often work on Lists too or vice versa? User said "List- or Set-type" usually implies both.
-                        } else {
-                            // Direct mapping: "String", "Number", "Color" etc.
-                            addOpToType(scope, op);
-                        }
-
-                        // Also populate dotOperatorsMap (Suffix based) for hover fallback
-                        // We extract suffix after LAST dot
-                        const dotIdx = label.lastIndexOf('.');
-                        const cleanLabel = label.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
-                        if (dotIdx > 0) {
-                            const suffix = label.substring(dotIdx + 1);
-                            const cleanSuffix = suffix.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
-                            if (cleanSuffix) {
-                                if (!dotOperatorsMap.has(cleanSuffix)) {
-                                    dotOperatorsMap.set(cleanSuffix, []);
-                                }
-                                dotOperatorsMap.get(cleanSuffix)?.push(op);
-                            }
-                        } else {
-                            if (cleanLabel) {
-                                if (!dotOperatorsMap.has(cleanLabel)) {
-                                    dotOperatorsMap.set(cleanLabel, []);
-                                }
-                                dotOperatorsMap.get(cleanLabel)?.push(op);
-                            }
-                        }
-                    }
-
-                    // OpFamily logic (independent of IsDotOp, usually for static access like Color.blue)
-                    const dotIdx = label.indexOf('.');
-                    if (dotIdx > 0 && !label.includes(' ')) {
-                        const familyName = label.substring(0, dotIdx);
-                        if (!operatorFamilies.has(familyName)) {
-                            operatorFamilies.set(familyName, []);
-                        }
-                        // Avoid duplicates
-                        const member = label.substring(dotIdx + 1);
-                        if (!operatorFamilies.get(familyName)?.includes(member)) {
-                            operatorFamilies.get(familyName)?.push(member);
-                        }
-                    }
-
-                    successCount++;
-                }
-            });
-            connection.console.log(`Loaded ${successCount} operators.`);
-
-            connection.console.log(`Loaded ${tinderboxOperators.size} operators from CSV.`);
-
-            // Add operators to reserved words
-            for (const opName of tinderboxOperators.keys()) {
-                reservedWords.add(opName);
-            }
-        }
-
-        // --- Load Reserved Words from File ---
-        const reservedPath = path.join(resourcePath, 'reserved_list.txt');
-
-        if (fs.existsSync(reservedPath)) {
-            const content = fs.readFileSync(reservedPath, 'utf-8');
-            content.split(/\r?\n/).forEach((line: string) => {
-                const word = line.trim();
-                if (word) {
-                    reservedWords.add(word);
-                    textReservedWords.add(word);
-                }
-            });
-            connection.console.log(`Loaded ${textReservedWords.size} keywords from file.`);
-        } else {
-            connection.console.warn(`Could not find reserved_list.txt at ${reservedPath}`);
-        }
-
-        // --- Load System Attributes ---
-        const attributesPath = path.join(resourcePath, 'system_attributes.csv');
-        let csvContent = '';
-        if (fs.existsSync(attributesPath)) {
-            csvContent = fs.readFileSync(attributesPath, 'utf-8');
-        } else {
-            connection.console.warn(`Could not find system_attributes.csv at ${attributesPath}`);
-        }
-
-        if (csvContent) {
-            // Simple CSV parser handling multiline quotes
+            // Helper to parse CSV (handles multiline fields and escapes)
             const parseCSV = (text: string) => {
                 const rows = [];
                 let currentRow = [];
                 let currentField = '';
                 let insideQuotes = false;
-
                 for (let i = 0; i < text.length; i++) {
                     const char = text[i];
-
+                    const nextChar = text[i + 1];
                     if (char === '"') {
-                        if (insideQuotes && text[i + 1] === '"') {
+                        if (insideQuotes && nextChar === '"') {
                             currentField += '"';
                             i++;
                         } else {
@@ -1278,7 +1079,7 @@ try {
                         currentRow.push(currentField);
                         currentField = '';
                     } else if ((char === '\r' || char === '\n') && !insideQuotes) {
-                        if (char === '\r' && text[i + 1] === '\n') i++;
+                        if (char === '\r' && nextChar === '\n') i++;
                         currentRow.push(currentField);
                         rows.push(currentRow);
                         currentRow = [];
@@ -1294,101 +1095,270 @@ try {
                 return rows;
             };
 
-            const parsedRows = parseCSV(csvContent);
-            // Skip header (row 0)
-            for (let i = 1; i < parsedRows.length; i++) {
-                const row = parsedRows[i];
-                if (row.length < 18) continue;
-                const firstCol = row[0].trim().replace(/^"|"$/g, '');
-                // Check if it's the header row (Name, AttributeDataType, ...)
-                if (firstCol.toLowerCase() === 'name' && row[1].trim() === 'AttributeDataType') continue;
-                if (firstCol.startsWith('#')) continue;
+            // --- Load Operators from CSV ---
+            const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
 
-                // Name,AttributeDataType,AttributeDefault,AttributeGroup,AttributePurpose,AttributeInheritsPrefs,AttributeReadOnly,AttributeIntrinsic,OriginalVersion,CodeFirstAdded,CodeAltered,PlainLinkCount,TextLinkCount,WebLinkCount,ChangeRefSet,IsInternalOnly,HasUISetting,Text
-                // Name,AttributeDataType,...
-                const name = '$' + firstCol; // Add $ prefix
-                // Check type and skip if excluded
-                const rawType = row[1]?.trim().replace(/^"|"$/g, '') || 'string';
-                const normType = rawType.toLowerCase().replace(/[^a-z]/g, '');
-                if (normType === 'action' || normType === 'font' || normType === 'actiontype' || normType === 'fonttype') {
-                    continue;
+            let opCsvContent = '';
+            if (fs.existsSync(operatorsPath)) opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
+            else connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
+
+            if (opCsvContent) {
+                const rows = parseCSV(opCsvContent);
+                // Migrated logic:
+
+                let successCount = 0;
+                rows.forEach((row, index) => {
+                    if (index === 0) return; // Skip header
+                    if (row.length >= 5) {
+                        const label = row[0].trim();
+                        // Fix: Skip empty labels or comments (if any)
+                        if (!label || label.startsWith('#')) return;
+
+                        const isDotOp = row[13]?.toLowerCase() === 'true';
+                        const opScope = row[2]?.trim() || 'Item';
+
+                        const op: TinderboxOperator = {
+                            name: label,
+                            type: row[3], // OpType
+                            returnType: row[4], // OpReturnType
+                            isDotOp: isDotOp,
+                            opScope: opScope,
+                            signature: label + (row[11] && parseInt(row[11]) > 0 ? '(...)' : ''), // Simple signature approximation
+                            description: row[23] || '',
+                            descriptionJa: row[24],
+                            kind: CompletionItemKind.Function // Default
+                        };
+
+                        // Refine Kind
+                        if (op.type.toLowerCase().includes('cond')) {
+                            op.kind = CompletionItemKind.Keyword;
+                        }
+
+                        tinderboxOperators.set(label, op);
+
+                        // Populate typeMethods based on OpScope matching
+                        if (isDotOp) {
+                            const scope = opScope.toLowerCase();
+
+                            // Rules for Scope -> Types
+                            // Rules for Scope -> Types
+                            if (scope === 'item') {
+                                // Heuristic Fix: The CSV often marks type-specific operators as "Item".
+                                // If the name starts with "List.", "String.", etc., treat it as that type.
+                                const lowerName = label.toLowerCase();
+                                if (lowerName.startsWith('list.')) {
+                                    addOpToType('list', op);
+                                    addOpToType('set', op); // Assuming lists/sets share
+                                } else if (lowerName.startsWith('set.')) {
+                                    addOpToType('set', op);
+                                    addOpToType('list', op);
+                                } else if (lowerName.startsWith('string.')) {
+                                    addOpToType('string', op);
+                                } else if (lowerName.startsWith('number.')) {
+                                    addOpToType('number', op);
+                                } else if (lowerName.startsWith('date.')) {
+                                    addOpToType('date', op);
+                                } else if (lowerName.startsWith('color.')) {
+                                    addOpToType('color', op);
+                                } else if (lowerName.startsWith('boolean.')) {
+                                    addOpToType('boolean', op);
+                                } else if (lowerName.startsWith('dictionary.')) {
+                                    addOpToType('dictionary', op);
+                                } else if (lowerName.startsWith('interval.')) {
+                                    addOpToType('interval', op);
+                                } else {
+                                    // Truly generic "Item" scope
+                                    ['string', 'list', 'set', 'number', 'color', 'boolean', 'dictionary', 'date', 'interval'].forEach(t => addOpToType(t, op));
+                                }
+                            } else if (scope === 'list') {
+                                addOpToType('list', op);
+                                addOpToType('set', op);
+                            } else if (scope === 'set') {
+                                addOpToType('set', op);
+                                addOpToType('list', op); // Assuming Set methods often work on Lists too or vice versa? User said "List- or Set-type" usually implies both.
+                            } else {
+                                // Direct mapping: "String", "Number", "Color" etc.
+                                addOpToType(scope, op);
+                            }
+
+                            // Also populate dotOperatorsMap (Suffix based) for hover fallback
+                            // We extract suffix after LAST dot
+                            const dotIdx = label.lastIndexOf('.');
+                            const cleanLabel = label.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                            if (dotIdx > 0) {
+                                const suffix = label.substring(dotIdx + 1);
+                                const cleanSuffix = suffix.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                                if (cleanSuffix) {
+                                    if (!dotOperatorsMap.has(cleanSuffix)) {
+                                        dotOperatorsMap.set(cleanSuffix, []);
+                                    }
+                                    dotOperatorsMap.get(cleanSuffix)?.push(op);
+                                }
+                            } else {
+                                if (cleanLabel) {
+                                    if (!dotOperatorsMap.has(cleanLabel)) {
+                                        dotOperatorsMap.set(cleanLabel, []);
+                                    }
+                                    dotOperatorsMap.get(cleanLabel)?.push(op);
+                                }
+                            }
+                        }
+
+                        // OpFamily logic (independent of IsDotOp, usually for static access like Color.blue)
+                        const dotIdx = label.indexOf('.');
+                        if (dotIdx > 0 && !label.includes(' ')) {
+                            const familyName = label.substring(0, dotIdx);
+                            if (!operatorFamilies.has(familyName)) {
+                                operatorFamilies.set(familyName, []);
+                            }
+                            // Avoid duplicates
+                            const member = label.substring(dotIdx + 1);
+                            if (!operatorFamilies.get(familyName)?.includes(member)) {
+                                operatorFamilies.get(familyName)?.push(member);
+                            }
+                        }
+
+                        successCount++;
+                    }
+                });
+                connection.console.log(`Loaded ${successCount} operators.`);
+
+                connection.console.log(`Loaded ${tinderboxOperators.size} operators from CSV.`);
+
+                // Add operators to reserved words
+                for (const opName of tinderboxOperators.keys()) {
+                    reservedWords.add(opName);
                 }
-
-                const attr: SystemAttribute = {
-                    name: name,
-                    type: rawType,
-                    group: row[3],
-                    defaultValue: row[2],
-                    readOnly: row[6].toLowerCase() === 'true',
-                    description: row[17] ? row[17].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n') : '',
-                    descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
-                };
-                systemAttributes.set(name, attr);
-                keywordNames.add(name); // Add to semantic tokens list
             }
-            connection.console.log(`Loaded ${systemAttributes.size} system attributes.`);
-        }
 
-        // --- Load Data Types ---
-        const typesPath = path.join(resourcePath, 'data_types_v2.csv');
-        let typesContent = '';
-        if (fs.existsSync(typesPath)) {
-            typesContent = fs.readFileSync(typesPath, 'utf-8');
-        } else {
-            connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
-        }
+            // --- Load Reserved Words from File ---
+            const reservedPath = path.join(resourcePath, 'reserved_list.txt');
 
-        if (typesContent) {
-            const rows = parseCSV(typesContent);
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 3) continue;
-                const rawName = row[0].trim().replace(/^"|"$/g, '');
-                // Name format: "Action-Type Attributes" -> "action"
-                // Name format: "Action-Type Attributes" -> "action"
-                const typeKey = rawName.split('-')[0].toLowerCase();
-
-                if (typeKey === 'action' || typeKey === 'font') continue;
-
-                const dataType: DataType = {
-                    name: rawName,
-                    description: row[1].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n'),
-                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
-                };
-                tinderboxDataTypes.set(typeKey, dataType);
-                // Handle "boolean" explicit overlap if needed, but key is safe
+            if (fs.existsSync(reservedPath)) {
+                const content = fs.readFileSync(reservedPath, 'utf-8');
+                content.split(/\r?\n/).forEach((line: string) => {
+                    const word = line.trim();
+                    if (word) {
+                        reservedWords.add(word);
+                        textReservedWords.add(word);
+                    }
+                });
+                connection.console.log(`Loaded ${textReservedWords.size} keywords from file.`);
+            } else {
+                connection.console.warn(`Could not find reserved_list.txt at ${reservedPath}`);
             }
-            connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
-        }
 
-        // --- Load Designators ---
-        const designatorsPath = path.join(resourcePath, 'designator.csv');
-        let designatorsContent = '';
-        if (fs.existsSync(designatorsPath)) {
-            designatorsContent = fs.readFileSync(designatorsPath, 'utf-8');
-        } else {
-            connection.console.warn(`Could not find designator.csv at ${designatorsPath}`);
-        }
-
-        if (designatorsContent) {
-            const rows = parseCSV(designatorsContent);
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 2) continue;
-                const name = row[0].trim().replace(/^"|"$/g, '');
-                const designator: TinderboxDesignator = {
-                    name: name,
-                    description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
-                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
-                };
-                tinderboxDesignators.set(name.toLowerCase(), designator);
+            // --- Load System Attributes ---
+            const attributesPath = path.join(resourcePath, 'system_attributes.csv');
+            let csvContent = '';
+            if (fs.existsSync(attributesPath)) {
+                csvContent = fs.readFileSync(attributesPath, 'utf-8');
+            } else {
+                connection.console.warn(`Could not find system_attributes.csv at ${attributesPath}`);
             }
-            connection.console.log(`Loaded ${tinderboxDesignators.size} designators.`);
-        }
 
-    } catch (err: any) {
-        connection.console.error(`Failed to load data: ${err.message}`);
+            if (csvContent) {
+                const parsedRows = parseCSV(csvContent);
+                // Skip header (row 0)
+                for (let i = 1; i < parsedRows.length; i++) {
+                    const row = parsedRows[i];
+                    if (row.length < 18) continue;
+                    const firstCol = row[0].trim().replace(/^"|"$/g, '');
+                    // Check if it's the header row (Name, AttributeDataType, ...)
+                    if (firstCol.toLowerCase() === 'name' && row[1].trim() === 'AttributeDataType') continue;
+                    if (firstCol.startsWith('#')) continue;
+
+                    // Name,AttributeDataType,AttributeDefault,AttributeGroup,AttributePurpose,AttributeInheritsPrefs,AttributeReadOnly,AttributeIntrinsic,OriginalVersion,CodeFirstAdded,CodeAltered,PlainLinkCount,TextLinkCount,WebLinkCount,ChangeRefSet,IsInternalOnly,HasUISetting,Text
+                    // Name,AttributeDataType,...
+                    const name = '$' + firstCol; // Add $ prefix
+                    // Check type and skip if excluded
+                    const rawType = row[1]?.trim().replace(/^"|"$/g, '') || 'string';
+                    const normType = rawType.toLowerCase().replace(/[^a-z]/g, '');
+                    if (normType === 'action' || normType === 'font' || normType === 'actiontype' || normType === 'fonttype') {
+                        continue;
+                    }
+
+                    const attr: SystemAttribute = {
+                        name: name,
+                        type: rawType,
+                        group: row[3],
+                        defaultValue: row[2],
+                        readOnly: row[6].toLowerCase() === 'true',
+                        description: row[17] ? row[17].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n') : '',
+                        descriptionJa: row[18] ? row[18].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    };
+                    systemAttributes.set(name, attr);
+                    keywordNames.add(name); // Add to semantic tokens list
+                }
+                connection.console.log(`Loaded ${systemAttributes.size} system attributes.`);
+            }
+
+            // --- Load Data Types ---
+            const typesPath = path.join(resourcePath, 'data_types_v2.csv');
+            let typesContent = '';
+            if (fs.existsSync(typesPath)) {
+                typesContent = fs.readFileSync(typesPath, 'utf-8');
+            } else {
+                connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
+            }
+
+            if (typesContent) {
+                const rows = parseCSV(typesContent);
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (row.length < 3) continue;
+                    const rawName = row[0].trim().replace(/^"|"$/g, '');
+                    // Name format: "Action-Type Attributes" -> "action"
+                    // Name format: "Action-Type Attributes" -> "action"
+                    const typeKey = rawName.split('-')[0].toLowerCase();
+
+                    if (typeKey === 'action' || typeKey === 'font') continue;
+
+                    const dataType: DataType = {
+                        name: rawName,
+                        description: row[1].replace(/^"|"$/g, '').replace(/(\r\n|\n|\r)/g, '  \n'),
+                        descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    };
+                    tinderboxDataTypes.set(typeKey, dataType);
+                    // Handle "boolean" explicit overlap if needed, but key is safe
+                }
+                connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
+            }
+
+            // --- Load Designators ---
+            const designatorsPath = path.join(resourcePath, 'designator.csv');
+            let designatorsContent = '';
+            if (fs.existsSync(designatorsPath)) {
+                designatorsContent = fs.readFileSync(designatorsPath, 'utf-8');
+            } else {
+                connection.console.warn(`Could not find designator.csv at ${designatorsPath}`);
+            }
+
+            if (designatorsContent) {
+                const rows = parseCSV(designatorsContent);
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (row.length < 2) continue;
+                    const name = row[0].trim().replace(/^"|"$/g, '');
+                    const designator: TinderboxDesignator = {
+                        name: name,
+                        description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
+                        descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                    };
+                    tinderboxDesignators.set(name.toLowerCase(), designator);
+                }
+                connection.console.log(`Loaded ${tinderboxDesignators.size} designators.`);
+            }
+
+        } catch (err: any) {
+            connection.console.error(`Failed to load data: ${err.message}`);
+        }
     }
+
+    // Call loadResources during initialization (or here, but loadResources is now a function)
+    connection.onInitialized(() => {
+        loadResources();
+    });
 
 
 
