@@ -19,7 +19,13 @@ import {
     Location,
     Range,
     TextEdit,
-    DocumentFormattingParams
+    DocumentFormattingParams,
+    DocumentSymbol,
+    SymbolKind,
+    DocumentSymbolParams,
+    PrepareRenameResult,
+    RenameParams,
+    WorkspaceEdit
 } from 'vscode-languageserver/node';
 
 import {
@@ -91,7 +97,13 @@ try {
                 // Definition Provider capability
                 definitionProvider: true,
                 // Document Formatting capability
-                documentFormattingProvider: true
+                documentFormattingProvider: true,
+                // Document Symbol capability
+                documentSymbolProvider: true,
+                // Rename capability
+                renameProvider: {
+                    prepareProvider: true
+                }
             }
         };
         if (hasWorkspaceFolderCapability) {
@@ -278,6 +290,158 @@ try {
                 newLines.join('\n')
             )
         ];
+    });
+
+    connection.onDocumentSymbol((params: DocumentSymbolParams): DocumentSymbol[] => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc) {
+            return [];
+        }
+
+        const text = doc.getText();
+        const symbols: DocumentSymbol[] = [];
+
+        // 1. Function patterns: function Name(...)
+        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        let match: RegExpExecArray | null;
+
+        // Reset index for search
+        functionPattern.lastIndex = 0;
+        while ((match = functionPattern.exec(text)) !== null) {
+            const name = match[1];
+            const startPos = doc.positionAt(match.index);
+            const endPos = doc.positionAt(match.index + match[0].length);
+            const range = Range.create(startPos, endPos);
+
+            // Selection range points to the name specifically
+            const nameOffset = match[0].indexOf(name);
+            const selectionRange = Range.create(
+                doc.positionAt(match.index + nameOffset),
+                doc.positionAt(match.index + nameOffset + name.length)
+            );
+
+            symbols.push(DocumentSymbol.create(
+                name,
+                undefined,
+                SymbolKind.Function,
+                range,
+                selectionRange
+            ));
+        }
+
+        // 2. Variable patterns: var:type Name
+        const varPattern = /var(?::[a-zA-Z0-9]+)?\s+([a-zA-Z0-9_]+)/g;
+        varPattern.lastIndex = 0;
+        while ((match = varPattern.exec(text)) !== null) {
+            const name = match[1];
+            const startPos = doc.positionAt(match.index);
+            const endPos = doc.positionAt(match.index + match[0].length);
+            const range = Range.create(startPos, endPos);
+
+            const nameOffset = match[0].indexOf(name);
+            const selectionRange = Range.create(
+                doc.positionAt(match.index + nameOffset),
+                doc.positionAt(match.index + nameOffset + name.length)
+            );
+
+            symbols.push(DocumentSymbol.create(
+                name,
+                undefined,
+                SymbolKind.Variable,
+                range,
+                selectionRange
+            ));
+        }
+
+        return symbols;
+    });
+
+    connection.onPrepareRename((params: TextDocumentPositionParams): PrepareRenameResult | null => {
+        const doc = documents.get(params.textDocument.uri);
+        if (!doc) return null;
+
+        const text = doc.getText();
+        const offset = doc.offsetAt(params.position);
+
+        // Find the word at the position
+        const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
+        const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
+        const word = before + after;
+
+        if (!word || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(word)) {
+            return null;
+        }
+
+        // Find the range of the word
+        const start = offset - before.length;
+        return {
+            range: Range.create(doc.positionAt(start), doc.positionAt(start + word.length)),
+            placeholder: word
+        };
+    });
+
+    connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
+        const { textDocument, position, newName } = params;
+        const doc = documents.get(textDocument.uri);
+        if (!doc) return null;
+
+        const text = doc.getText();
+        const offset = doc.offsetAt(position);
+        const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
+        const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
+        const oldName = before + after;
+
+        if (!oldName) return null;
+
+        const edits: TextEdit[] = [];
+
+        // Determine scope: Global or current function
+        // This is a simplified scope detection
+        let functionScope: { start: number, end: number } | null = null;
+        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/g;
+        let match;
+        while ((match = functionPattern.exec(text)) !== null) {
+            let braceCount = 1;
+            let endOffset = match.index + match[0].length;
+            while (braceCount > 0 && endOffset < text.length) {
+                if (text[endOffset] === '{') braceCount++;
+                else if (text[endOffset] === '}') braceCount--;
+                endOffset++;
+            }
+            if (offset >= match.index && offset <= endOffset) {
+                functionScope = { start: match.index, end: endOffset };
+                break;
+            }
+        }
+
+        // Find all occurrences of oldName in the determined scope
+        // We use a regex that ensures it's a whole word and not inside a string or comment
+        const searchPattern = new RegExp(`\\b${oldName}\\b`, 'g');
+        const searchRange = functionScope ? text.slice(functionScope.start, functionScope.end) : text;
+        const searchOffset = functionScope ? functionScope.start : 0;
+
+        let searchMatch;
+        while ((searchMatch = searchPattern.exec(searchRange)) !== null) {
+            const absoluteIndex = searchMatch.index + searchOffset;
+
+            // Basic check to see if it's inside a string or comment (very simplified)
+            const textToMatch = text.slice(0, absoluteIndex);
+            const isInString = (textToMatch.split('"').length % 2 === 0) || (textToMatch.split("'").length % 2 === 0);
+            const isInComment = textToMatch.split('\n').pop()?.includes('//');
+
+            if (!isInString && !isInComment) {
+                edits.push(TextEdit.replace(
+                    Range.create(doc.positionAt(absoluteIndex), doc.positionAt(absoluteIndex + oldName.length)),
+                    newName
+                ));
+            }
+        }
+
+        return {
+            changes: {
+                [textDocument.uri]: edits
+            }
+        };
     });
 
     // The content of a text document has changed. This event is emitted
