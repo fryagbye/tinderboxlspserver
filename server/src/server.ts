@@ -28,7 +28,10 @@ import {
     WorkspaceEdit,
     InlayHint,
     InlayHintParams,
-    InlayHintKind
+    InlayHintKind,
+    CodeAction,
+    CodeActionKind,
+    CodeActionParams
 } from 'vscode-languageserver/node';
 
 import {
@@ -109,7 +112,9 @@ connection.onInitialize((params: InitializeParams) => {
                 prepareProvider: true
             },
             // Inlay Hint capability
-            inlayHintProvider: true
+            inlayHintProvider: true,
+            // Code Action capability
+            codeActionProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -1066,12 +1071,20 @@ interface TinderboxDesignator {
     descriptionJa?: string;
 }
 
+interface TinderboxColor {
+    name: string;
+    description: string;
+    descriptionJa?: string;
+    colorValue?: string;
+}
+
 
 const lowerCaseOperators: Map<string, string> = new Map(); // Case-insensitive lookup
 
 const systemAttributes: Map<string, SystemAttribute> = new Map();
 const tinderboxDataTypes: Map<string, DataType> = new Map();
 const tinderboxDesignators: Map<string, TinderboxDesignator> = new Map();
+const tinderboxColors: Map<string, TinderboxColor> = new Map();
 // keywordNames is used for fast lookup in semantic tokens
 const keywordNames: Set<string> = new Set();
 // Reserved words for validation
@@ -1248,6 +1261,9 @@ async function loadResources() {
                         }
                     }
 
+                    tinderboxOperators.set(label, op);
+                    lowerCaseOperators.set(label.toLowerCase(), label);
+
                     successCount++;
                 }
             });
@@ -1378,6 +1394,32 @@ async function loadResources() {
                 tinderboxDesignators.set(name.toLowerCase(), designator);
             }
             connection.console.log(`Loaded ${tinderboxDesignators.size} designators (async).`);
+        }
+
+        // --- Load Colors ---
+        const colorsPath = path.join(resourcePath, 'colors.csv');
+        let colorsContent = '';
+        if (fs.existsSync(colorsPath)) {
+            colorsContent = await fs.promises.readFile(colorsPath, 'utf-8');
+        } else {
+            connection.console.warn(`Could not find colors.csv at ${colorsPath}`);
+        }
+
+        if (colorsContent) {
+            const rows = parseCSV(colorsContent);
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 2) continue;
+                const name = row[0].trim().replace(/^"|"$/g, '');
+                const color: TinderboxColor = {
+                    name: name,
+                    description: row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n'),
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined,
+                    colorValue: row[3] ? row[3].trim() : undefined
+                };
+                tinderboxColors.set(name.toLowerCase(), color);
+            }
+            connection.console.log(`Loaded ${tinderboxColors.size} colors (async).`);
         }
         connection.console.log("All resources loaded successfully (async).");
     } catch (err: any) {
@@ -1649,7 +1691,36 @@ connection.onCompletion(
             });
         }
 
-        return completions.concat(attrCompletions);
+        // --- NEW: Designators (指定子) ---
+        const designatorCompletions: CompletionItem[] = Array.from(tinderboxDesignators.values())
+            .map((designator) => {
+                const name = designator.name;
+                // Check if it's a function-like designator (e.g. find, collect, etc. often have arguments)
+                // In Tinderbox, some designators can take arguments.
+                // For now, let's check if the description suggests usage with parentheses.
+                const isFunc = /\(.*\)/.test(designator.description) || ['find', 'collect', 'each'].some(d => name.toLowerCase().includes(d));
+
+                return {
+                    label: name,
+                    kind: CompletionItemKind.Constant,
+                    detail: 'Designator (指定子)',
+                    insertText: isFunc ? `${name}($0)` : name,
+                    insertTextFormat: isFunc ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
+                    data: { type: 'designator', key: name.toLowerCase(), language: lang }
+                };
+            });
+
+        const colorCompletions: CompletionItem[] = Array.from(tinderboxColors.values())
+            .map((color) => {
+                return {
+                    label: color.name,
+                    kind: CompletionItemKind.Color,
+                    detail: color.colorValue ? `Color (${color.colorValue})` : 'Color',
+                    data: { type: 'color', key: color.name.toLowerCase(), language: lang }
+                };
+            });
+
+        return completions.concat(attrCompletions).concat(designatorCompletions).concat(colorCompletions);
 
     }
 );
@@ -1679,6 +1750,15 @@ connection.onCompletionResolve(
                     value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n*Read Only*: ${attr.readOnly}\n\n${desc}`
                 };
             }
+        } else if (data.type === 'designator') {
+            const d = tinderboxDesignators.get(data.key);
+            if (d) {
+                const desc = (lang === 'ja' && d.descriptionJa) ? d.descriptionJa : d.description;
+                item.documentation = {
+                    kind: 'markdown',
+                    value: `**${d.name}**\n\n*Designator (指定子)*\n\n${desc}`
+                };
+            }
         } else if (data.type === 'datatype') {
             const dt = tinderboxDataTypes.get(data.key);
             if (dt) {
@@ -1686,6 +1766,16 @@ connection.onCompletionResolve(
                 item.documentation = {
                     kind: 'markdown',
                     value: `**${dt.name}**\n\n${desc}`
+                };
+            }
+        } else if (data.type === 'color') {
+            const color = tinderboxColors.get(data.key);
+            if (color) {
+                const desc = (lang === 'ja' && color.descriptionJa) ? color.descriptionJa : color.description;
+                const hexInfo = color.colorValue ? `**${color.colorValue}**\n\n` : '';
+                item.documentation = {
+                    kind: 'markdown',
+                    value: `**${color.name}**\n\n${hexInfo}*Color*\n\n${desc}`
                 };
             }
         }
@@ -1710,21 +1800,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     // 1b. Boolean Constants
     const booleanKeywords = new Set([
         'true', 'false'
-    ]);
-
-    // 2. Types (Blue)
-    const typeKeywords = new Set([
-        'string', 'number', 'boolean', 'list', 'date', 'color', 'set', 'interval'
-    ]);
-
-    // 3. Designators (Reserved Functionality)
-    const designatorKeywords = new Set([
-        'adornment', 'agent', 'cover', 'current', 'find', 'firstSibling', 'grandparent',
-        'lastChild', 'lastSibling', 'library', 'next', 'nextItem', 'nextSibling',
-        'nextSiblingItem', 'original', 'parent', 'previous', 'previousItem',
-        'previousSiblingItem', 'prevSibling', 'randomChild', 'selection', 'that', 'this',
-        'adorments', 'all', 'ancestors', 'children', 'descendants', 'siblings',
-        'destination', 'source', 'child'
     ]);
 
     // 4. Scan for User Functions (to highlight calls)
@@ -1770,10 +1845,10 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             } else if (booleanKeywords.has(word)) {
                 builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
-            } else if (typeKeywords.has(word)) {
+            } else if (tinderboxDataTypes.has(word.toLowerCase())) {
                 builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('type'), 0);
                 prevTokenWasFunctionKeyword = false;
-            } else if (designatorKeywords.has(word)) {
+            } else if (tinderboxDesignators.has(word.toLowerCase())) {
                 builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
             } else if (userFunctionNames.has(word)) {
@@ -2017,6 +2092,15 @@ connection.onHover(
                     },
                     range: hoveredRange
                 };
+            } else {
+                // FALLBACK: User Attribute
+                return {
+                    contents: {
+                        kind: 'markdown',
+                        value: `**${hoveredWord}**\n\n*User Attribute (ユーザー定義属性)*`
+                    },
+                    range: hoveredRange
+                };
             }
         }
 
@@ -2037,7 +2121,22 @@ connection.onHover(
                 range: hoveredRange
             };
         }
-        // 3. Fallback: Local Variables
+
+        // 3. Colors (Newly Added Priority)
+        const color = tinderboxColors.get(hoveredWord.toLowerCase());
+        if (color) {
+            const desc = (lang === 'ja' && color.descriptionJa) ? color.descriptionJa : color.description;
+            const hexInfo = color.colorValue ? `**${color.colorValue}**\n\n` : '';
+            return {
+                contents: {
+                    kind: 'markdown',
+                    value: `**${color.name}**\n\n${hexInfo}*Color*\n\n${desc}`
+                },
+                range: hoveredRange
+            };
+        }
+
+        // 4. Fallback: Local Variables
         // We need textBefore for context
         const textBefore = content.slice(0, offset);
         // FIX: More robust var regex (handle optional type and spaces)
@@ -2140,6 +2239,18 @@ connection.onSignatureHelp(async (params) => {
                 const match = beforeParen.match(/([a-zA-Z0-9_.]+)$/);
                 if (match) {
                     const word = match[1];
+
+                    // Simple active parameter calculation by counting commas inside the current paren
+                    const callText = text.slice(scanIdx + 1, offset);
+                    // Match top-level commas (not inside nested parens)
+                    let commaCount = 0;
+                    let pDepth = 0;
+                    for (const c of callText) {
+                        if (c === '(') pDepth++;
+                        else if (c === ')') pDepth--;
+                        else if (c === ',' && pDepth === 0) commaCount++;
+                    }
+
                     const op = tinderboxOperators.get(word);
                     if (op) {
                         const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
@@ -2147,10 +2258,24 @@ connection.onSignatureHelp(async (params) => {
                             signatures: [{
                                 label: op.signature,
                                 documentation: { kind: 'markdown', value: desc },
-                                parameters: [] // We could parse signature to separate params, but label is often enough
+                                parameters: []
                             }],
                             activeSignature: 0,
-                            activeParameter: 0
+                            activeParameter: commaCount
+                        };
+                    }
+
+                    const d = tinderboxDesignators.get(word.toLowerCase());
+                    if (d) {
+                        const desc = (lang === 'ja' && d.descriptionJa) ? d.descriptionJa : d.description;
+                        return {
+                            signatures: [{
+                                label: `${d.name}(...)`,
+                                documentation: { kind: 'markdown', value: desc },
+                                parameters: []
+                            }],
+                            activeSignature: 0,
+                            activeParameter: commaCount
                         };
                     }
                 }
@@ -2275,6 +2400,64 @@ connection.onDefinition(
         return null;
     }
 );
+
+connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
+    const codeActions: CodeAction[] = [];
+    params.context.diagnostics.forEach(diagnostic => {
+        // 1. Smart Quote Quick Fix
+        if (diagnostic.message.includes('Smart quote') && diagnostic.message.includes('detected')) {
+            const match = diagnostic.message.match(/Smart quote '(.*)' detected/);
+            if (match) {
+                const smartQuote = match[1];
+                let replacement = '"';
+                if (['‘', '’'].includes(smartQuote)) {
+                    replacement = "'";
+                }
+
+                codeActions.push({
+                    title: `Replace with straight quote (${replacement})`,
+                    kind: CodeActionKind.QuickFix,
+                    diagnostics: [diagnostic],
+                    edit: {
+                        changes: {
+                            [params.textDocument.uri]: [
+                                {
+                                    range: diagnostic.range,
+                                    newText: replacement
+                                }
+                            ]
+                        }
+                    }
+                });
+            }
+        }
+
+        // 2. Case Mismatch Quick Fix
+        if (diagnostic.message.includes('Case Mismatch:')) {
+            const match = diagnostic.message.match(/should be '(.*)'/);
+            if (match) {
+                const correctCase = match[1];
+                codeActions.push({
+                    title: `Change to '${correctCase}'`,
+                    kind: CodeActionKind.QuickFix,
+                    diagnostics: [diagnostic],
+                    edit: {
+                        changes: {
+                            [params.textDocument.uri]: [
+                                {
+                                    range: diagnostic.range,
+                                    newText: correctCase
+                                }
+                            ]
+                        }
+                    }
+                });
+            }
+        }
+    });
+
+    return codeActions;
+});
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

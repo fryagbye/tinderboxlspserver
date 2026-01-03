@@ -2,6 +2,22 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.2.0] - 2026-01-03
+### Added
+- **Feature**: Added support for Tinderbox defined colors. Color names like `blue` or `poppy` are now available in completion and hover.
+- **Feature**: Color hover documentation now displays the hex color code (e.g., `#FFCC66`).
+
+### Reverted
+- **Revert**: The "Go to Definition" feature for built-in items (operators, attributes) has been reverted based on user feedback (Feature 6).
+
+### Consolidated Updates (from v0.1.8 - v0.1.9)
+- **Fix**: Resolved a crash (`Invalid regular expression`) caused by unescaped special characters (like unclosed parentheses) during hover/completion.
+- **Feature**: **Go to Definition** for user-defined functions, variables, arguments, and loop variables (Scope-aware).
+- **Hover**: Fixed missing hover information for chained expressions starting with attributes and arguments (e.g., `$Text(aID).eachLine()`).
+- **Hover**: Improved method matching by robustly cleaning iterator suffixes (e.g., `{actions}`) from operator names.
+- **Hover**: Added fallback to global dot operator lookup when type inference fails.
+- **Hover**: Enhanced hover information for untyped local variables, loop variables (`.each()`), and function arguments.
+
 ## [0.1.9] - 2025-12-30
 ### Fixed
 - **Server**: Fixed a crash where the LSP server would fail with an `Invalid regular expression` (Unterminated group) error when encountering unescaped special characters in dynamic regex construction (e.g., during hover or completion).

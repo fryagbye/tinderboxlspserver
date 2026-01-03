@@ -1,0 +1,197 @@
+Name,Text,TextJa,ColorValue
+'normal' colour,,,
+'transparent' colour,,,
+'automatic' colour,,,
+(not set),,,
+black,,,#000000
+dark black,,,#000000
+darker black,,,#000000
+darkest black,,,#000000
+light black,,,#7F7F7F
+lighter black,,,#AAAAAA
+lightest black,,,#BFBFBF
+muted black,,,
+warmer black,,,
+cooler black,,,
+blue,,,#003366
+dark blue,,,#002144
+darker blue,,,#001428
+darkest blue,,,#000E1D
+light blue,,,#5986B2
+lighter blue,,,#88AACC
+lightest blue,,,#A3BED9
+muted blue,,,
+warmer blue,,,
+cooler blue,,,
+bright blue,,,#0000FF
+dark bright blue,,,#0000AA
+darker bright blue,,,#000066
+darkest bright blue,,,#000048
+light bright blue,,,#7F7FFF
+lighter bright blue,,,#AAAAFF
+lightest bright blue,,,#BFBFFF
+muted bright blue,,,
+warmer bright blue,,,
+cooler bright blue,,,
+bright green,,,#00FF00
+dark bright green,,,#00AA00
+darker bright green,,,#006600
+darkest bright green,,,#004800
+light bright green,,,#7FFF7F
+lighter bright green,,,#AAFFAA
+lightest bright green,,,#BFFFBF
+muted bright green,,,
+warmer bright green,,,
+cooler bright green,,,
+bright red,,,#FF0000
+dark bright red,,,#AA0000
+darker bright red,,,#660000
+darkest bright red,,,#480000
+light bright red,,,#FF7F7F
+lighter bright red,,,#FFAAAA
+lightest bright red,,,#FFBFBF
+muted bright red,,,
+warmer bright red,,,
+cooler bright red,,,
+cool gray,,,#607080
+dark cool gray,,,#3F4A55
+darker cool gray,,,#262C33
+darkest cool gray,,,#1B1F24
+light cool gray,,,#A7B3BF
+lighter cool gray,,,#C3CCD5
+lightest cool gray,,,#D1D8DF
+muted cool gray,,,
+warmer cool gray,,,
+cooler cool gray,,,
+cool gray dark,,,#505860
+dark cool gray dark,,,#353A40
+darker cool gray dark,,,#1F2326
+darkest cool gray dark,,,#16191B
+light cool gray dark,,,#A1A8AF
+lighter cool gray dark,,,#BFC5CA
+lightest cool gray dark,,,#CED3D7
+muted cool gray dark,,,
+warmer cool gray dark,,,
+cooler cool gray dark,,,
+cyan,,,#006666
+dark cyan,,,#004344
+darker cyan,,,#002828
+darkest cyan,,,#001D1D
+light cyan,,,#59B2B2
+lighter cyan,,,#88CCCC
+lightest cyan,,,#A3D9D9
+muted cyan,,,
+warmer cyan,,,
+cooler cyan,,,
+darkest gray,,,#16191B
+darker gray,,,#16191B
+dark gray,,,#16191B
+gray,,,#16191B
+light gray,,,#16191B
+lighter gray,,,#16191B
+lightest gray,,,#16191B
+muted gray,,,#16191B
+warmer gray,,,#16191B
+cooler gray,,,#16191B
+green,,,#009900
+dark green,,,#006600
+darker green,,,#003D00
+darkest green,,,#002B00
+light green,,,#66CC66
+lighter green,,,#93DD93
+lightest green,,,#ACE6AC
+muted green,,,
+warmer green,,,
+cooler green,,,
+magenta,,,#660066
+dark magenta,,,#440043
+darker magenta,,,#280028
+darkest magenta,,,#1D001D
+light magenta,,,#B259B2
+lighter magenta,,,#CC88CC
+lightest magenta,,,#D9A3D9
+muted magenta,,,
+warmer magenta,,,
+cooler magenta,,,
+orange,,,#FF8800
+dark orange,,,#AA5A00
+darker orange,,,#663600
+darkest orange,,,#482600
+light orange,,,#FFC37F
+lighter orange,,,#FFD7AA
+lightest orange,,,#FFE1BF
+muted orange,,,
+warmer orange,,,
+cooler orange,,,
+poppy,,,#FFCC66
+dark poppy,,,#AA8743
+darker poppy,,,#665128
+darkest poppy,,,#483A1D
+light poppy,,,#FFE5B2
+lighter poppy,,,#FFEECC
+lightest poppy,,,#FFF2D9
+muted poppy,,,
+warmer poppy,,,
+cooler poppy,,,
+red,,,#990000
+dark red,,,#660000
+darker red,,,#3D0000
+darkest red,,,#2B0000
+light red,,,#CC6666
+lighter red,,,#DD9393
+lightest red,,,#E6ACAC
+muted red,,,
+warmer red,,,
+cooler red,,,
+darkest violet,,,
+darker violet,,,
+dark violet,,,
+violet,,,
+light violet,,,
+lighter violet,,,
+lightest violet,,,
+muted violet,,,
+warmer violet,,,
+cooler violet,,,
+warm gray,,,#807060
+dark warm gray,,,#554A3F
+darker warm gray,,,#332C26
+darkest warm gray,,,#241F1B
+light warm gray,,,#BFB3A7
+lighter warm gray,,,#D5CCC3
+lightest warm gray,,,#DFD8D1
+muted warm gray,,,
+warmer warm gray,,,
+cooler warm gray,,,
+warm gray dark,,,#605850
+dark warm gray dark,,,#403A35
+darker warm gray dark,,,#26231F
+darkest warm gray dark,,,#1B1916
+light warm gray dark,,,#AFA8A1
+lighter warm gray dark,,,#CAC5BF
+lightest warm gray dark,,,#D7D3CE
+muted warm gray dark,,,
+warmer warm gray dark,,,
+cooler warm gray dark,,,
+white,,,#FFFFFF
+dark white,,,#AAAAAA
+darkest white,,,#484848
+darker white,,,#666666
+light white,,,#FFFFFF
+lighter white,,,#FFFFFF
+lightest white,,,#FFFFFF
+muted white,,,
+warmer white,,,
+cooler white,,,
+yellow,,,#CCCC00
+dark yellow,,,#878800
+darker yellow,,,#515100
+darkest yellow,,,#3A3A00
+light yellow,,,#E5E572
+lighter yellow,,,#EEEE9F
+lightest yellow,,,#F2F2B6
+muted yellow,,,
+warmer yellow,,,
+cooler yellow,,,
+"7
+#e9ecee",,,

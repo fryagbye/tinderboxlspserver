@@ -10,11 +10,13 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Keywords**: Completion for reserved words (`if`, `else`, `var`, `function`).
 - **Variables & Functions**: Dynamic completion for locally declared variables (`var:string vStr`) and functions.
 - **Snippets**: Function completion includes argument placeholders.
+- **Colors**: Autocomplete for Tinderbox defined colors (e.g., `blue`, `poppy`).
 ![Completion](https://github.com/fryagbye/tinderboxlspserver/raw/main/images/completion.gif)
 
 ### 2. Hover Documentation
 - **Operator Details**: Hover over an operator to see its syntax, return type, and description.
 - **Attribute Info**: View descriptions and types for System Attributes.
+- **Color Info**: View hex codes and descriptions for named colors.
 - **Bilingual Support**: Toggle between English and Japanese descriptions via `tinderboxActionCodeServer.language`.
 ![Hover](https://github.com/fryagbye/tinderboxlspserver/raw/main/images/hover.gif)
 
@@ -49,6 +51,14 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
 
 ## Release Notes
+
+### 0.2.0
+- Feature: **Color Support** (Completion and Hover for defined colors).
+- Feature: Color hex code display in hover.
+- Feature: **Go to Definition** for user-defined functions and variables (Scope-aware).
+- Fix: Resolved server crash (`Invalid regular expression`) with unescaped characters.
+- Fix: Enhanced Hover for chained expressions, arguments, and loops.
+- Revert: "Go to Definition" for built-in items was reverted.
 
 ### 0.1.9
 - Fix: Resolved a crash (`Invalid regular expression`) caused by unescaped special characters (like unclosed parentheses) during hover/completion.
