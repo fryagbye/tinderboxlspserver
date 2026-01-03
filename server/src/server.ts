@@ -17,7 +17,9 @@ import {
     Hover,
     Definition,
     Location,
-    Range
+    Range,
+    TextEdit,
+    DocumentFormattingParams
 } from 'vscode-languageserver/node';
 
 import {
@@ -87,7 +89,9 @@ try {
                     triggerCharacters: ['(', ',']
                 },
                 // Definition Provider capability
-                definitionProvider: true
+                definitionProvider: true,
+                // Document Formatting capability
+                documentFormattingProvider: true
             }
         };
         if (hasWorkspaceFolderCapability) {
@@ -157,6 +161,123 @@ try {
     // Only keep settings for open documents
     documents.onDidClose(e => {
         documentSettings.delete(e.document.uri);
+    });
+
+    connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
+        const { textDocument, options } = params;
+        const doc = documents.get(textDocument.uri);
+        if (!doc) {
+            return [];
+        }
+
+        const text = doc.getText();
+        const lines = text.split(/\r?\n/);
+        const indentSize = options.tabSize || 4;
+        const indentChar = options.insertSpaces ? ' '.repeat(indentSize) : '\t';
+
+        let currentIndent = 0;
+        const newLines: string[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            let trimmed = line.trim();
+
+            if (trimmed.length === 0) {
+                continue;
+            }
+
+            // --- Spacing Rule: 2 blank lines before function ---
+            if (trimmed.startsWith('function') && newLines.length > 0) {
+                // Ensure exactly two blank lines before function
+                while (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+                    newLines.pop();
+                }
+                newLines.push('', '');
+            }
+
+            // Decrease indent if line starts with closing brace
+            // We check for '}' at the very beginning of the trimmed line
+            if (trimmed.startsWith('}')) {
+                currentIndent = Math.max(0, currentIndent - 1);
+            }
+
+            // Apply current indentation
+            let newLine = indentChar.repeat(currentIndent) + trimmed;
+
+            // Space optimization for operators (simple version)
+            // Ensure space around =, +, -, *, /, ==, !=, <, >, <=, >=
+            // We only apply this if it doesn't look like a comment or a string start
+            if (!trimmed.startsWith('//') && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
+                // This is a very simplified approach. A full tokenizer would be better.
+                // For now, let's just do common ones that are safe.
+                newLine = newLine
+                    .replace(/\s*([=+*\/<>!]=|[=+*\/<>])\s*/g, ' $1 ') // Add spaces around operators
+                    .replace(/\s*,\s*/g, ', ') // Space after comma
+                    .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
+                    .replace(/ {2,}/g, ' '); // Collapse multiple spaces (but keep indent)
+
+                // Restore indentation which might have been affected by collapse
+                const indent = indentChar.repeat(currentIndent);
+                newLine = indent + newLine.trim();
+                trimmed = newLine.trim(); // Update trimmed for subsequent checks
+            }
+
+            // --- Semicolon Completion (Heuristic) ---
+            if (!trimmed.endsWith(';') &&
+                !trimmed.endsWith('{') &&
+                !trimmed.endsWith('}') &&
+                !trimmed.endsWith(',') &&
+                !trimmed.endsWith('(') &&
+                !trimmed.match(/^function\s+/) &&
+                !trimmed.match(/^(if|while|each|for)\b/) &&
+                !/(^|\s)else$/.test(trimmed) &&
+                !/[+\-*/|&=]$/.test(trimmed)
+            ) {
+                // Check if it ends with alphanumeric or closing paren/quote
+                if (/[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
+                    // Check next line (if any) doesn't start with operator or block
+                    let nextIdx = i + 1;
+                    let nextLine = '';
+                    while (nextIdx < lines.length) {
+                        nextLine = lines[nextIdx].trim();
+                        if (nextLine.length > 0) break;
+                        nextIdx++;
+                    }
+                    if (!/^[\+\-\*\/\.\|&=]/.test(nextLine) && !nextLine.startsWith('{')) {
+                        newLine += ';';
+                        trimmed += ';'; // Update trimmed for brace check
+                    }
+                }
+            }
+
+            newLines.push(newLine);
+
+            // --- Spacing Rule: 1 blank line after var declaration block ---
+            if (trimmed.startsWith('var:')) {
+                let nextIdx = i + 1;
+                let nextTrimmed = '';
+                while (nextIdx < lines.length) {
+                    nextTrimmed = lines[nextIdx].trim();
+                    if (nextTrimmed.length > 0) break;
+                    nextIdx++;
+                }
+                if (nextTrimmed.length > 0 && !nextTrimmed.startsWith('var:')) {
+                    newLines.push('');
+                }
+            }
+
+            // Increase indent if line ends with opening brace
+            if (trimmed.endsWith('{')) {
+                currentIndent++;
+            }
+        }
+
+        return [
+            TextEdit.replace(
+                Range.create(doc.positionAt(0), doc.positionAt(text.length)),
+                newLines.join('\n')
+            )
+        ];
     });
 
     // The content of a text document has changed. This event is emitted

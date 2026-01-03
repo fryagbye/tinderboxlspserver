@@ -1,0 +1,10 @@
+var:string vStr="Hello"
+vStr=vStr+" World"
+if($Name=="Test"){
+$Text="Match"
+}
+function myFunction(a,b){
+var:number vNum=a+b
+return vNum
+}
+myFunction(1,2)
