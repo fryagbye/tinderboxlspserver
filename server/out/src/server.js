@@ -85,6 +85,8 @@ try {
                 connection.console.log('Workspace folder change event received.');
             });
         }
+        // Start loading resources in the background
+        loadResources();
     });
     // The global settings, used when the `workspace/configuration` request is not supported by the client.
     const defaultSettings = { maxNumberOfProblems: 1000, language: 'en' };
@@ -220,7 +222,8 @@ try {
             node_1.TextEdit.replace(node_1.Range.create(doc.positionAt(0), doc.positionAt(text.length)), newLines.join('\n'))
         ];
     });
-    connection.onDocumentSymbol((params) => {
+    connection.onDocumentSymbol(async (params) => {
+        await resourcesPromise;
         const doc = documents.get(params.textDocument.uri);
         if (!doc) {
             return [];
@@ -256,7 +259,8 @@ try {
         }
         return symbols;
     });
-    connection.onPrepareRename((params) => {
+    connection.onPrepareRename(async (params) => {
+        await resourcesPromise;
         const doc = documents.get(params.textDocument.uri);
         if (!doc)
             return null;
@@ -276,7 +280,8 @@ try {
             placeholder: word
         };
     });
-    connection.onRenameRequest((params) => {
+    connection.onRenameRequest(async (params) => {
+        await resourcesPromise;
         const { textDocument, position, newName } = params;
         const doc = documents.get(textDocument.uri);
         if (!doc)
@@ -331,7 +336,8 @@ try {
             }
         };
     });
-    connection.languages.inlayHint.on((params) => {
+    connection.languages.inlayHint.on(async (params) => {
+        await resourcesPromise;
         const doc = documents.get(params.textDocument.uri);
         if (!doc)
             return [];
@@ -845,9 +851,14 @@ try {
     const reservedWords = new Set();
     // Reserved words strictly from file (for Completion)
     const textReservedWords = new Set();
-    function loadResources() {
+    let resolveResources;
+    const resourcesPromise = new Promise((resolve) => {
+        resolveResources = resolve;
+    });
+    async function loadResources() {
         try {
             const resourcePath = path.join(__dirname, '..', '..', '..', 'resource');
+            connection.console.log(`Starting asynchronous resource loading from ${resourcePath}`);
             // Helper to parse CSV (handles multiline fields and escapes)
             const parseCSV = (text) => {
                 const rows = [];
@@ -892,7 +903,7 @@ try {
             const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
             let opCsvContent = '';
             if (fs.existsSync(operatorsPath))
-                opCsvContent = fs.readFileSync(operatorsPath, 'utf-8');
+                opCsvContent = await fs.promises.readFile(operatorsPath, 'utf-8');
             else
                 connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
             if (opCsvContent) {
@@ -1019,8 +1030,8 @@ try {
                         successCount++;
                     }
                 });
-                connection.console.log(`Loaded ${successCount} operators.`);
-                connection.console.log(`Loaded ${tinderboxOperators.size} operators from CSV.`);
+                connection.console.log(`Loaded ${successCount} operators (async).`);
+                connection.console.log(`Loaded ${tinderboxOperators.size} operators from CSV (async).`);
                 // Add operators to reserved words
                 for (const opName of tinderboxOperators.keys()) {
                     reservedWords.add(opName);
@@ -1029,7 +1040,7 @@ try {
             // --- Load Reserved Words from File ---
             const reservedPath = path.join(resourcePath, 'reserved_list.txt');
             if (fs.existsSync(reservedPath)) {
-                const content = fs.readFileSync(reservedPath, 'utf-8');
+                const content = await fs.promises.readFile(reservedPath, 'utf-8');
                 content.split(/\r?\n/).forEach((line) => {
                     const word = line.trim();
                     if (word) {
@@ -1037,7 +1048,7 @@ try {
                         textReservedWords.add(word);
                     }
                 });
-                connection.console.log(`Loaded ${textReservedWords.size} keywords from file.`);
+                connection.console.log(`Loaded ${textReservedWords.size} keywords from file (async).`);
             }
             else {
                 connection.console.warn(`Could not find reserved_list.txt at ${reservedPath}`);
@@ -1046,7 +1057,7 @@ try {
             const attributesPath = path.join(resourcePath, 'system_attributes.csv');
             let csvContent = '';
             if (fs.existsSync(attributesPath)) {
-                csvContent = fs.readFileSync(attributesPath, 'utf-8');
+                csvContent = await fs.promises.readFile(attributesPath, 'utf-8');
             }
             else {
                 connection.console.warn(`Could not find system_attributes.csv at ${attributesPath}`);
@@ -1085,13 +1096,13 @@ try {
                     systemAttributes.set(name, attr);
                     keywordNames.add(name); // Add to semantic tokens list
                 }
-                connection.console.log(`Loaded ${systemAttributes.size} system attributes.`);
+                connection.console.log(`Loaded ${systemAttributes.size} system attributes (async).`);
             }
             // --- Load Data Types ---
             const typesPath = path.join(resourcePath, 'data_types_v2.csv');
             let typesContent = '';
             if (fs.existsSync(typesPath)) {
-                typesContent = fs.readFileSync(typesPath, 'utf-8');
+                typesContent = await fs.promises.readFile(typesPath, 'utf-8');
             }
             else {
                 connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
@@ -1116,13 +1127,13 @@ try {
                     tinderboxDataTypes.set(typeKey, dataType);
                     // Handle "boolean" explicit overlap if needed, but key is safe
                 }
-                connection.console.log(`Loaded ${tinderboxDataTypes.size} data types.`);
+                connection.console.log(`Loaded ${tinderboxDataTypes.size} data types (async).`);
             }
             // --- Load Designators ---
             const designatorsPath = path.join(resourcePath, 'designator.csv');
             let designatorsContent = '';
             if (fs.existsSync(designatorsPath)) {
-                designatorsContent = fs.readFileSync(designatorsPath, 'utf-8');
+                designatorsContent = await fs.promises.readFile(designatorsPath, 'utf-8');
             }
             else {
                 connection.console.warn(`Could not find designator.csv at ${designatorsPath}`);
@@ -1141,19 +1152,20 @@ try {
                     };
                     tinderboxDesignators.set(name.toLowerCase(), designator);
                 }
-                connection.console.log(`Loaded ${tinderboxDesignators.size} designators.`);
+                connection.console.log(`Loaded ${tinderboxDesignators.size} designators (async).`);
             }
+            connection.console.log("All resources loaded successfully (async).");
         }
         catch (err) {
-            connection.console.error(`Failed to load data: ${err.message}`);
+            connection.console.error(`Failed to load data asynchronously: ${err.message}`);
+        }
+        finally {
+            resolveResources();
         }
     }
-    // Call loadResources during initialization (or here, but loadResources is now a function)
-    connection.onInitialized(() => {
-        loadResources();
-    });
     // This handler provides the initial list of the completion items.
     connection.onCompletion(async (textDocumentPosition) => {
+        await resourcesPromise;
         const document = documents.get(textDocumentPosition.textDocument.uri);
         const content = document?.getText();
         if (!document || !content)
@@ -1389,7 +1401,8 @@ try {
         return completions.concat(attrCompletions);
     });
     // --- Completion Resolve Handler ---
-    connection.onCompletionResolve((item) => {
+    connection.onCompletionResolve(async (item) => {
+        await resourcesPromise;
         const data = item.data;
         const lang = data?.language || 'en';
         if (data.type === 'operator') {
@@ -1568,6 +1581,7 @@ try {
     });
     // --- Hover Handler ---
     connection.onHover(async (textDocumentPosition) => {
+        await resourcesPromise;
         const document = documents.get(textDocumentPosition.textDocument.uri);
         if (!document)
             return null;
@@ -1880,6 +1894,7 @@ try {
     });
     // --- Definition Handler ---
     connection.onDefinition(async (params) => {
+        await resourcesPromise;
         const document = documents.get(params.textDocument.uri);
         if (!document)
             return null;
