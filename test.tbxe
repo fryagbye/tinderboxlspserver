@@ -1,0 +1,24 @@
+<html>
+<head><title>^title^</title></head>
+<body>
+<h1>^value($Name)^</h1>
+<p>^value($Text.paragraphs(1))^</p>
+
+^if($Name.count > 0)^
+  <p>Exists!</p>
+^else^
+  <p>Not found</p>
+^endIf^
+
+^action($Color="blue";)^
+
+<!-- Error case: Unclosed caret -->
+^value($Name)
+
+<!-- Error case: Unknown tag -->
+^unknownTag^
+
+<!-- Error case: Action code mismatch inside tag -->
+^value($Name = 123)^
+</body>
+</html>

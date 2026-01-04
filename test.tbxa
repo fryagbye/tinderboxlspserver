@@ -1,0 +1,8 @@
+var:string vName = "Tinderbox";
+$Name = vName;
+$Color = "red";
+if($Name.count > 0){
+    $Text = "Found";
+}
+// This should have NO export tags support
+^value($Name)^

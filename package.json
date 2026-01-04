@@ -5,7 +5,7 @@
   "author": "fryagbye",
   "icon": "icon.png",
   "license": "MIT",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "fryagbye",
   "repository": {
     "type": "git",
@@ -25,10 +25,22 @@
         "id": "tinderbox-action-code",
         "aliases": [
           "Tinderbox Action Code",
-          "tbox"
+          "tboxa"
         ],
         "extensions": [
+          ".tbxa",
           ".tbxc"
+        ],
+        "configuration": "./client/language-configuration.json"
+      },
+      {
+        "id": "tinderbox-export-code",
+        "aliases": [
+          "Tinderbox Export Code",
+          "tboxe"
+        ],
+        "extensions": [
+          ".tbxe"
         ],
         "configuration": "./client/language-configuration.json"
       }

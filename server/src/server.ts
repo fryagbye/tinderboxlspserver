@@ -87,7 +87,7 @@ connection.onInitialize((params: InitializeParams) => {
             // Tell the client that this server supports code completion.
             completionProvider: {
                 resolveProvider: true,
-                triggerCharacters: ['.', ':'] // Trigger on dot for methods, colon for types
+                triggerCharacters: ['.', ':', '^', '$'] // Trigger on dot, colon, caret (export), dollar (attr)
             },
             // Semantic Tokens capability
             semanticTokensProvider: {
@@ -197,7 +197,8 @@ documents.onDidClose(e => {
 connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
     const { textDocument, options } = params;
     const doc = documents.get(textDocument.uri);
-    if (!doc) {
+    if (!doc || doc.languageId === 'tinderbox-export-code') {
+        // Disable whole-document formatting for Export Code to avoid messing up HTML/Template layout.
         return [];
     }
 
@@ -239,10 +240,19 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
         // Ensure space around =, +, -, *, /, ==, !=, <, >, <=, >=
         // We only apply this if it doesn't look like a comment or a string start
         if (!trimmed.startsWith('//') && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
-            // This is a very simplified approach. A full tokenizer would be better.
-            // For now, let's just do common ones that are safe.
+            // This is a very simplified approach.
+            // 1. Handle common operators (except slash)
+            newLine = newLine.replace(/\s*([=+*<>!]=|[=+*<>])\s*/g, ' $1 ');
+
+            // 2. Handle slash (/) carefully to avoid reformatting paths like /Templates/Note
+            // We treat it as an operator ONLY if it's surrounded by spaces OR between alphanumeric chars
+            // but NOT if it looks like a path start or is part of a path.
+            // Simple heuristic: if it has a space before OR after, or is between numbers/vars, it's likely an operator.
+            // For now, let's ONLY space it if it ALREADY has a space on at least one side,
+            // or if it's between a closing paren/quote and a word.
+            newLine = newLine.replace(/([a-zA-Z0-9_$)"'])\s*\/\s*([a-zA-Z0-9_$"(])/g, '$1 / $2');
+
             newLine = newLine
-                .replace(/\s*([=+*\/<>!]=|[=+*\/<>])\s*/g, ' $1 ') // Add spaces around operators
                 .replace(/\s*,\s*/g, ', ') // Space after comma
                 .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
                 .replace(/ {2,}/g, ' '); // Collapse multiple spaces (but keep indent)
@@ -573,54 +583,272 @@ documents.onDidChangeContent(change => {
 
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
     await resourcesPromise;
-    connection.console.log(`Validating document: ${textDocument.uri}`);
-    // In this simple example we get the settings for every validate run.
     const settings = await getDocumentSettings(textDocument.uri);
-
     const text = textDocument.getText();
     const diagnostics: Diagnostic[] = [];
 
-    // --- MASKING Step ---
+    if (textDocument.languageId === 'tinderbox-export-code') {
+        // --- 1. Export Code Parsing ---
+        // We use a robust scanner to handle nested tags and balanced parentheses
+        interface ExportTagMatch {
+            tagName: string;
+            tagContent: string;
+            tagStart: number;
+            tagEnd: number;
+            contentStart: number;
+        }
+
+        const findExportTags = (input: string, baseOffset: number): ExportTagMatch[] => {
+            const results: ExportTagMatch[] = [];
+            let i = 0;
+            while (i < input.length) {
+                if (input[i] === '^') {
+                    const start = i;
+                    i++;
+                    // Find tag name
+                    let tagName = '';
+                    while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
+                        tagName += input[i];
+                        i++;
+                    }
+
+                    if (tagName === '') {
+                        // Just a caret, skip
+                        continue;
+                    }
+
+                    if (i < input.length && input[i] === '(') {
+                        // Potential tag with arguments: ^name(args)^
+                        const contentStartIdx = i + 1;
+                        let depth = 1;
+                        i++;
+                        let inString: string | null = null;
+                        let isEscaped = false;
+
+                        while (i < input.length) {
+                            const char = input[i];
+                            if (isEscaped) {
+                                isEscaped = false;
+                            } else if (char === '\\') {
+                                isEscaped = true;
+                            } else if (inString) {
+                                if (char === inString) {
+                                    inString = null;
+                                }
+                            } else if (char === '"' || char === "'") {
+                                inString = char;
+                            } else if (char === '(') {
+                                depth++;
+                            } else if (char === ')') {
+                                depth--;
+                            }
+
+                            if (depth === 0 && !inString) {
+                                if (i + 1 < input.length && input[i + 1] === '^') {
+                                    results.push({
+                                        tagName,
+                                        tagContent: input.substring(contentStartIdx, i),
+                                        tagStart: baseOffset + start,
+                                        tagEnd: baseOffset + i + 2,
+                                        contentStart: baseOffset + contentStartIdx
+                                    });
+                                    i += 2;
+                                    break;
+                                } else {
+                                    // Found closing paren but no trailing caret, strictly no match in TBX
+                                    break;
+                                }
+                            }
+                            i++;
+                        }
+                    } else if (i < input.length && input[i] === '^') {
+                        // Argument-less tag: ^name^
+                        results.push({
+                            tagName,
+                            tagContent: '',
+                            tagStart: baseOffset + start,
+                            tagEnd: baseOffset + i + 1,
+                            contentStart: -1
+                        });
+                        i++;
+                    }
+                } else {
+                    i++;
+                }
+            }
+            return results;
+        };
+
+        const allTags: ExportTagMatch[] = [];
+        const processInputRecursively = (input: string, baseOffset: number) => {
+            const tags = findExportTags(input, baseOffset);
+            for (const tag of tags) {
+                allTags.push(tag);
+                if (tag.tagContent) {
+                    processInputRecursively(tag.tagContent, tag.contentStart);
+                }
+            }
+        };
+
+        processInputRecursively(text, 0);
+
+        const processedTagStarts = new Set<number>();
+        for (const tag of allTags) {
+            processedTagStarts.add(tag.tagStart);
+            const lowerTagName = tag.tagName.toLowerCase();
+
+            // Basic tag validation (existence)
+            if (!tinderboxExportTags.has(lowerTagName)) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Warning,
+                    range: {
+                        start: textDocument.positionAt(tag.tagStart),
+                        end: textDocument.positionAt(tag.tagStart + tag.tagName.length + 1)
+                    },
+                    message: `Unknown Export Tag: '^${tag.tagName}'`,
+                    source: 'Tinderbox Export Code'
+                });
+            }
+
+            // Inner Action Code validation for specific tags
+            // Note: 'include' and others often take paths, which are NOT Action Code.
+            // We only validate Action Code for 'value', 'if', 'action', 'do', 'not'.
+            // 'include' arguments are handled by recursive tag extraction but not as a full expression.
+            if (['value', 'if', 'action', 'do', 'not'].includes(lowerTagName)) {
+                if (tag.contentStart !== -1) {
+                    const suppressSemicolon = lowerTagName === 'value';
+
+                    // --- MASK NESTED TAGS for parent validation ---
+                    // If we are validating ^if(...)^, we should mask any ^value()^ inside it 
+                    // so the inner carets and content don't interfere with parent's action code validation.
+                    let contentToValidate = tag.tagContent;
+                    for (const otherTag of allTags) {
+                        if (otherTag !== tag &&
+                            otherTag.tagStart >= tag.contentStart &&
+                            otherTag.tagEnd <= (tag.tagStart + tag.tagName.length + 2 + tag.tagContent.length)) {
+                            // This tag is inside the current tag. Mask it.
+                            const relativeStart = otherTag.tagStart - tag.contentStart;
+                            const relativeEnd = otherTag.tagEnd - tag.contentStart;
+                            if (relativeStart >= 0 && relativeEnd <= contentToValidate.length) {
+                                contentToValidate = contentToValidate.substring(0, relativeStart) +
+                                    ' '.repeat(relativeEnd - relativeStart) +
+                                    contentToValidate.substring(relativeEnd);
+                            }
+                        }
+                    }
+
+                    const innerDiagnostics = performActionCodeValidation(contentToValidate, textDocument, tag.contentStart, { suppressSemicolon });
+                    diagnostics.push(...innerDiagnostics);
+                }
+            }
+        }
+
+        // --- 2. Unclosed Caret Check ---
+        // Carets not belonging to any extracted tag
+        for (let i = 0; i < text.length; i++) {
+            if (text[i] === '^') {
+                let isMatched = false;
+                for (const tag of allTags) {
+                    if (i >= tag.tagStart && i < tag.tagEnd) {
+                        isMatched = true;
+                        break;
+                    }
+                }
+                if (!isMatched) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Warning,
+                        range: {
+                            start: textDocument.positionAt(i),
+                            end: textDocument.positionAt(i + 1)
+                        },
+                        message: `Unclosed or unexpected caret '^'. Export tags must be '^name^' or '^name(args)^'.`,
+                        source: 'Tinderbox Export Code'
+                    });
+                }
+            }
+        }
+    } else {
+        // --- .tbxa (Action Code only) ---
+        const actionDiagnostics = performActionCodeValidation(text, textDocument, 0);
+        diagnostics.push(...actionDiagnostics);
+    }
+
+    connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+}
+
+function performActionCodeValidation(text: string, textDocument: TextDocument, baseOffset: number, options: { suppressSemicolon?: boolean } = {}): Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+
     // --- MASKING Step ---
     let maskedText = text;
 
-    // 1. Mask Strings (Double AND Single Quotes) - to prevent comments/parens inside strings from confusing heuristics
-    // Matches "..." or '...' handling escaped quotes
-    maskedText = maskedText.replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, (match) => {
-        const quote = match[0];
-        return quote + ' '.repeat(Math.max(0, match.length - 2)) + quote;
-    });
-
-    // 2. Mask Comments
-    maskedText = maskedText.replace(/\/\/.*$/gm, (match) => ' '.repeat(match.length));
+    // 1 & 2. Mask Strings and Comments
+    // We use a robust character-by-character masker to handle escapes and nested parens correctly
+    const buffer = text.split('');
+    let i = 0;
+    while (i < buffer.length) {
+        if (buffer[i] === '/' && buffer[i + 1] === '/') {
+            // Comment
+            while (i < buffer.length && buffer[i] !== '\n') {
+                buffer[i] = ' ';
+                i++;
+            }
+        } else if (buffer[i] === '"' || buffer[i] === "'") {
+            // String
+            const quote = buffer[i];
+            i++;
+            while (i < buffer.length) {
+                if (buffer[i] === '\\') {
+                    buffer[i] = ' ';
+                    i++;
+                    if (i < buffer.length) {
+                        buffer[i] = ' ';
+                        i++;
+                    }
+                } else if (buffer[i] === quote) {
+                    i++;
+                    break;
+                } else {
+                    buffer[i] = ' ';
+                    i++;
+                }
+            }
+        } else {
+            i++;
+        }
+    }
+    maskedText = buffer.join('');
 
     // 3. Mask Parens (Keep parens, mask content)
-    maskedText = maskedText.replace(/\([^)]*\)/g, (match) => {
-        return '(' + ' '.repeat(Math.max(0, match.length - 2)) + ')';
-    });
+    // Now safe because strings and tags are already masked to spaces.
+    // We do this RECURSIVELY (innermost first) to handle nested parens like collect_if(children(), ...)
+    let prevMasked;
+    do {
+        prevMasked = maskedText;
+        maskedText = maskedText.replace(/\(([^()]*)\)/g, (match, inner) => {
+            return '(' + ' '.repeat(inner.length) + ')';
+        });
+    } while (maskedText !== prevMasked);
 
-    // --- 1. Smart Quote Check (on MASKED text) ---
-    // Fix: Removed '|' from regex as it matched the literal pipe operator
+    // --- 1. Smart Quote Check ---
     const smartQuotePattern = /([“”‘’])/g;
     let m: RegExpExecArray | null;
     while ((m = smartQuotePattern.exec(maskedText))) {
-        const diagnostic: Diagnostic = {
+        diagnostics.push({
             severity: DiagnosticSeverity.Warning,
             range: {
-                start: textDocument.positionAt(m.index),
-                end: textDocument.positionAt(m.index + m[0].length)
+                start: textDocument.positionAt(baseOffset + m.index),
+                end: textDocument.positionAt(baseOffset + m.index + m[0].length)
             },
             message: `Smart quote '${m[0]}' detected. Use straight quotes (" or ').`,
             source: 'Tinderbox Action Code'
-        };
-        diagnostics.push(diagnostic);
+        });
     }
 
-    // --- Gather Valid Identifiers for Case Check ---
+    // --- Gather Valid Identifiers ---
     const validIdentifiers = new Set<string>();
     const lowerToOriginal = new Map<string, string>();
 
-    // 0. Base Keywords (Types, Control, Designators) - to avoid Case Mismatch for valid lowercase keywords
     const baseKeywords = [
         'var', 'if', 'else', 'while', 'do', 'return', 'each', 'to', 'in', 'end',
         'string', 'number', 'boolean', 'list', 'date', 'color', 'set', 'interval',
@@ -633,33 +861,29 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
     ];
     baseKeywords.forEach(k => validIdentifiers.add(k));
 
-    // 1. Built-in Operators
     for (const op of tinderboxOperators.values()) {
         validIdentifiers.add(op.name);
         lowerToOriginal.set(op.name.toLowerCase(), op.name);
     }
-    // 2. System Attributes
     for (const attr of systemAttributes.values()) {
         validIdentifiers.add(attr.name);
         lowerToOriginal.set(attr.name.toLowerCase(), attr.name);
     }
 
-    // 3. Local Variables (Scan with regex first)
     const varDeclPatternForScan = /var:([a-zA-Z0-9]+)\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
     while ((m = varDeclPatternForScan.exec(text))) {
-        validIdentifiers.add(m[1]); // Type name (if user defines var:Type)
-        validIdentifiers.add(m[2]); // Variable Name
+        validIdentifiers.add(m[1]);
+        validIdentifiers.add(m[2]);
         lowerToOriginal.set(m[2].toLowerCase(), m[2]);
     }
 
-    // 4. User Functions
     const funcPatternForScan = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
     while ((m = funcPatternForScan.exec(text))) {
         validIdentifiers.add(m[1]);
         lowerToOriginal.set(m[1].toLowerCase(), m[1]);
     }
 
-    // --- 2. Case Sensitivity Check (on MASKED text) ---
+    // --- 2. Case Sensitivity Check ---
     const wordPattern = /\b([a-zA-Z0-9_$]+)\b/g;
     while ((m = wordPattern.exec(maskedText))) {
         const word = m[0];
@@ -669,28 +893,26 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
         if (lowerToOriginal.has(lower)) {
             const correctCase = lowerToOriginal.get(lower);
             if (correctCase && correctCase !== word) {
-                const diagnostic: Diagnostic = {
+                diagnostics.push({
                     severity: DiagnosticSeverity.Warning,
                     range: {
-                        start: textDocument.positionAt(m.index),
-                        end: textDocument.positionAt(m.index + word.length)
+                        start: textDocument.positionAt(baseOffset + m.index),
+                        end: textDocument.positionAt(baseOffset + m.index + word.length)
                     },
                     message: `Case Mismatch: '${word}' should be '${correctCase}'.`,
                     source: 'Tinderbox Action Code'
-                };
-                diagnostics.push(diagnostic);
+                });
             }
         }
     }
 
-    // --- 3. Missing Semicolon Check (Heuristic on MASKED text) ---
+    // --- 3. Missing Semicolon Check ---
     const lines = maskedText.split(/\r?\n/);
     let charOffset = 0;
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
 
-        // Allow empty lines, comments (masked to spaces), lines ending with { or } or , or (
         if (trimmed.length > 0 &&
             !trimmed.endsWith(';') &&
             !trimmed.endsWith('{') &&
@@ -699,67 +921,42 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
             !trimmed.endsWith('(') &&
             !trimmed.match(/^function\s+/)
         ) {
-
-            // If it looks like a statement (alphanumeric or closing paren/quote)
-            // Check if the current line ends with an operator that suggests continuation
             const endsWithOperator = /[+\-*/|&=]$/.test(trimmed);
-
-            // Check ahead for next line starting with operator OR block
             let nextLineStartsOperator = false;
             let nextLineStartsBlock = false;
             if (i < lines.length - 1) {
                 const nextLine = lines[i + 1].trim();
-                if (/^[\+\-\*\/\.\|&=]/.test(nextLine)) {
-                    nextLineStartsOperator = true;
-                }
-                if (nextLine.startsWith('{')) {
-                    nextLineStartsBlock = true;
-                }
+                if (/^[\+\-\*\/\.\|&=]/.test(nextLine)) nextLineStartsOperator = true;
+                if (nextLine.startsWith('{')) nextLineStartsBlock = true;
             }
 
-            // Skip if:
-            // 1. Ends with operator
-            // 2. Next line starts with operator
-            // 3. Next line starts with { (Block start)
-            // 4. Ends with 'else' (e.g. "} else")
-            // 5. Starts with Control Keyword (if, while, each, for)
             const isControlStatement = /^(if|while|each|for|function)\b/.test(trimmed);
             const endsWithElse = /(^|\s)else$/.test(trimmed);
 
-            if (!endsWithOperator &&
+            if (!options.suppressSemicolon &&
+                !endsWithOperator &&
                 !nextLineStartsOperator &&
                 !nextLineStartsBlock &&
                 !isControlStatement &&
+                !endsWithOperator &&
                 !endsWithElse &&
                 /[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
-                const diagnostic: Diagnostic = {
+                diagnostics.push({
                     severity: DiagnosticSeverity.Warning,
                     range: {
-                        start: { line: i, character: line.length }, // Point to EOL (approx)
-                        end: { line: i, character: line.length }
+                        start: textDocument.positionAt(baseOffset + charOffset + line.length),
+                        end: textDocument.positionAt(baseOffset + charOffset + line.length)
                     },
                     message: `Missing semicolon?`,
                     source: 'Tinderbox Action Code'
-                };
-                diagnostics.push(diagnostic);
+                });
             }
         }
-        charOffset += line.length + 1; // +1 for newline
+        charOffset += line.length + 1;
     }
 
-
-    // --- 4. Assignment Type Checking (Existing Logic) ---
-    // Regex for System Attributes: $Name = Value
+    // --- 4. Assignment Type Checking ---
     const attrAssignmentPattern = /(\$[a-zA-Z0-9_]+)\s*=\s*([^;]+);?/g;
-
-    // Regex for Local Var Declaration: var:type name (= value)?
-    const varDeclPattern = /var:([a-zA-Z0-9]+)\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
-
-    // Regex for Local Var Assignment: name = value
-    // Note: This is broad, might catch non-vars. We verify against declaredLocalVars.
-    const varAssignPattern = /([a-zA-Z0-9_]+)\s*=\s*([^;]+);?/g;
-
-    // 4.1. Scan for System Attributes Assignments
     while ((m = attrAssignmentPattern.exec(text))) {
         const varName = m[1];
         const rhs = m[2].trim();
@@ -768,102 +965,80 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
         if (attr) {
             const inferredType = evaluateExpressionType(rhs);
             if (inferredType && !isCompatible(attr.type, inferredType)) {
-                const diagnostic: Diagnostic = {
+                diagnostics.push({
                     severity: DiagnosticSeverity.Warning,
                     range: {
-                        start: textDocument.positionAt(m.index),
-                        end: textDocument.positionAt(m.index + m[0].length)
+                        start: textDocument.positionAt(baseOffset + m.index),
+                        end: textDocument.positionAt(baseOffset + m.index + m[0].length)
                     },
                     message: `Type Mismatch: '${varName}' is ${attr.type}, but assigned ${inferredType}.`,
                     source: 'Tinderbox Action Code'
-                };
-                diagnostics.push(diagnostic);
+                });
             }
         }
     }
 
-    // 4.2. Scan for Local Variable Declarations & Assignments
-    // We need to parse line by line or generally to build scope? 
-    // For simplicity in this regex-based approach, we scan the whole doc to find declarations 
-    // and put them in a map. (Ignoring scope for now - treating as file-scope).
-    const localVars = new Map<string, string>(); // Name -> Type
-
-    // 4.2.1. Declaration pass
-    // reservedWords is now a global Set populated at startup
-
+    const localVars = new Map<string, string>();
+    const varDeclPattern = /var:([a-zA-Z0-9]+)\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
     while ((m = varDeclPattern.exec(text))) {
         const typeDecl = m[1];
         const varName = m[2];
 
-        // --- NEW: Reserved Word Check ---
         if (reservedWords.has(varName)) {
-            const diagnostic: Diagnostic = {
+            diagnostics.push({
                 severity: DiagnosticSeverity.Error,
                 range: {
-                    start: textDocument.positionAt(m.index + m[0].indexOf(varName)),
-                    end: textDocument.positionAt(m.index + m[0].indexOf(varName) + varName.length)
+                    start: textDocument.positionAt(baseOffset + m.index + m[0].indexOf(varName)),
+                    end: textDocument.positionAt(baseOffset + m.index + m[0].indexOf(varName) + varName.length)
                 },
                 message: `Reserved Word Error: '${varName}' cannot be used as a variable name.`,
                 source: 'Tinderbox Action Code'
-            };
-            diagnostics.push(diagnostic);
+            });
         }
         const rhs = m[3] ? m[3].trim() : null;
-
         localVars.set(varName, typeDecl);
 
         if (rhs) {
             const inferredType = evaluateExpressionType(rhs, localVars);
-            // Declared type might be "num", "string". Normalize?
-            // Action code uses "number", "string", "boolean", "color", "date", "set", "list" usually.
-            // Or shorthand?
-
             if (inferredType && !isCompatible(typeDecl, inferredType)) {
-                const diagnostic: Diagnostic = {
+                diagnostics.push({
                     severity: DiagnosticSeverity.Warning,
                     range: {
-                        start: textDocument.positionAt(m.index),
-                        end: textDocument.positionAt(m.index + m[0].length)
+                        start: textDocument.positionAt(baseOffset + m.index),
+                        end: textDocument.positionAt(baseOffset + m.index + m[0].length)
                     },
                     message: `Type Mismatch: Variable '${varName}' declared as ${typeDecl}, but initialized with ${inferredType}.`,
                     source: 'Tinderbox Action Code'
-                };
-                diagnostics.push(diagnostic);
+                });
             }
         }
     }
 
-    // 4.2.2. Assignment pass (reuse regex or reset?)
-    // We need to check assignments to these local vars.
-    // Re-running regex on text might overlap. 
-    // We should probably iterate tokens properly, but let's do a separate pass for assignments.
-
+    const varAssignPattern = /([a-zA-Z0-9_]+)\s*=\s*([^;]+);?/g;
     while ((m = varAssignPattern.exec(text))) {
         const varName = m[1];
         const rhs = m[2].trim();
 
-        // Is it a local var?
         if (localVars.has(varName)) {
             const declaredType = localVars.get(varName);
             if (declaredType) {
                 const inferredType = evaluateExpressionType(rhs, localVars);
                 if (inferredType && !isCompatible(declaredType, inferredType)) {
-                    const diagnostic: Diagnostic = {
+                    diagnostics.push({
                         severity: DiagnosticSeverity.Warning,
                         range: {
-                            start: textDocument.positionAt(m.index),
-                            end: textDocument.positionAt(m.index + m[0].length)
+                            start: textDocument.positionAt(baseOffset + m.index),
+                            end: textDocument.positionAt(baseOffset + m.index + m[0].length)
                         },
                         message: `Type Mismatch: Variable '${varName}' is ${declaredType}, but assigned ${inferredType}.`,
                         source: 'Tinderbox Action Code'
-                    };
-                    diagnostics.push(diagnostic);
+                    });
                 }
             }
         }
     }
 
-    connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+    return diagnostics;
 }
 
 // --- Helper for Type Inference ---
@@ -1097,6 +1272,14 @@ const keywordNames: Set<string> = new Set();
 // Reserved words for validation
 const reservedWords: Set<string> = new Set();
 // Reserved words strictly from file (for Completion)
+interface TinderboxExportTag {
+    name: string;
+    description: string;
+    descriptionJa?: string;
+}
+
+const tinderboxExportTags: Map<string, TinderboxExportTag> = new Map();
+
 const textReservedWords: Set<string> = new Set();
 
 let resolveResources: () => void;
@@ -1442,6 +1625,32 @@ async function loadResources() {
             }
             connection.console.log(`Loaded ${tinderboxColors.size} colors (async).`);
         }
+
+        // --- Load Export Tags ---
+        const exportTagsPath = path.join(resourcePath, 'export_tags.csv');
+        let exportTagsContent = '';
+        if (fs.existsSync(exportTagsPath)) {
+            exportTagsContent = await fs.promises.readFile(exportTagsPath, 'utf-8');
+        } else {
+            connection.console.warn(`Could not find export_tags.csv at ${exportTagsPath}`);
+        }
+
+        if (exportTagsContent) {
+            const rows = parseCSV(exportTagsContent);
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 2) continue;
+                const rawName = row[0].trim().replace(/^"|"$/g, '');
+                const baseName = rawName.replace(/\^/g, '').replace(/\(.*\)/, '').trim().toLowerCase();
+                const tag: TinderboxExportTag = {
+                    name: rawName,
+                    description: row[1] ? row[1].replace(/^"|"$/g, '').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : '',
+                    descriptionJa: row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"').replace(/\\n/g, '\n').replace(/(\r\n|\n|\r)/g, '  \n') : undefined
+                };
+                tinderboxExportTags.set(baseName, tag);
+            }
+            connection.console.log(`Loaded ${tinderboxExportTags.size} export tags (async).`);
+        }
         connection.console.log("All resources loaded successfully (async).");
     } catch (err: any) {
         connection.console.error(`Failed to load data asynchronously: ${err.message}`);
@@ -1465,11 +1674,74 @@ connection.onCompletion(
         const settings = await getDocumentSettings(textDocumentPosition.textDocument.uri);
         const lang = settings.language;
         let textBefore = '';
+        let offset = 0;
         let triggerPrefix = ''; // FIX: Restore missing declaration
 
-        if (content && document) {
-            const offset = document.offsetAt(textDocumentPosition.position);
-            textBefore = content.slice(0, offset).trimEnd();
+        if (document && content) {
+            offset = document.offsetAt(textDocumentPosition.position);
+            textBefore = content.slice(0, offset); // keep original for caret context
+        }
+
+        const isExportCode = document.languageId === 'tinderbox-export-code';
+
+        if (isExportCode) {
+            // Check if we are inside a ^...^ block
+            const caretRegex = /\^/g;
+            let m;
+            let lastCaret = -1;
+            while ((m = caretRegex.exec(textBefore))) {
+                lastCaret = m.index;
+            }
+
+            if (lastCaret !== -1) {
+                // Potential inside tag
+                const tagText = textBefore.substring(lastCaret + 1);
+                // If it contains another ^, we are OUTSIDE a tag (or in a new one)
+                // But we already checked for ALL carets.
+
+                // If we just typed ^ (tagText is empty), suggest tags
+                if (tagText === '' || /^[a-zA-Z0-9]+$/.test(tagText)) {
+                    const range = {
+                        start: document.positionAt(offset - tagText.length - 1),
+                        end: textDocumentPosition.position
+                    };
+
+                    return Array.from(tinderboxExportTags.values()).map(tag => {
+                        const cleanName = tag.name.replace(/\^/g, '');
+                        const isFunc = cleanName.includes('(');
+                        const insertText = isFunc ? `^${cleanName.replace(/\(.*\)/, '($0)^')}` : `^${cleanName}^`;
+                        const desc = (lang === 'ja' && tag.descriptionJa) ? tag.descriptionJa : tag.description;
+                        return {
+                            label: tag.name,
+                            kind: CompletionItemKind.Keyword,
+                            detail: 'Export Tag',
+                            documentation: { kind: 'markdown', value: desc },
+                            textEdit: {
+                                range: range,
+                                newText: insertText
+                            },
+                            insertTextFormat: InsertTextFormat.Snippet
+                        };
+                    });
+                }
+
+                // If inside a tag that takes action code: ^value(...)
+                const actionTagMatch = textBefore.match(/\^([a-zA-Z0-9$]+)\(([^)]*)$/);
+                if (actionTagMatch) {
+                    const tagName = actionTagMatch[1].toLowerCase();
+                    if (['value', 'if', 'action', 'include', 'do', 'not'].includes(tagName)) {
+                        // FALL THROUGH to normal action code completion logic
+                        // but we need to adjust textBefore so normal matchers work
+                        textBefore = actionTagMatch[2]; // Simulate action code context
+                    }
+                } else {
+                    // Inside a tag but not in args? maybe just after name e.g. ^value
+                    // Don't show global action code here.
+                    return [];
+                }
+            } else if (textBefore.endsWith('^')) {
+                // Handled above usually but just in case
+            }
         }
 
         // FIX: Update regex to support arguments with quotes, slashes, spaces (e.g. $Name("target"). )
@@ -1598,7 +1870,7 @@ connection.onCompletion(
         // FIX: Robust backward scan for $ trigger
         // We scan backwards from offset-1 until we hit a non-identifier char.
         // If the char BEFORE the identifier is $, then hasDollarTrigger = true.
-        const offset = (document && content) ? document.offsetAt(textDocumentPosition.position) : 0;
+        // offset is already defined above
         let scanIdx = (content && offset > 0) ? offset - 1 : -1;
 
         // Skip current word part (e.g. "Na" in "$Na")
@@ -1936,6 +2208,130 @@ connection.onHover(
 
         const offset = document.offsetAt(textDocumentPosition.position);
         const content = document.getText();
+
+        const isExportCode = document.languageId === 'tinderbox-export-code';
+
+        if (isExportCode) {
+            // Priority: Check if we are over an Export Tag (^...^)
+            // We use the same recursive logic as validation to find the exact tag at the cursor
+            interface ExportTagMatch {
+                tagName: string;
+                tagContent: string;
+                tagStart: number;
+                tagEnd: number;
+                contentStart: number;
+            }
+
+            const findExportTags = (input: string, baseOffset: number): ExportTagMatch[] => {
+                const results: ExportTagMatch[] = [];
+                let i = 0;
+                while (i < input.length) {
+                    if (input[i] === '^') {
+                        const start = i;
+                        i++;
+                        let tagName = '';
+                        while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
+                            tagName += input[i];
+                            i++;
+                        }
+                        if (tagName === '') continue;
+
+                        if (i < input.length && input[i] === '(') {
+                            const contentStartIdx = i + 1;
+                            let depth = 1;
+                            i++;
+                            let inString: string | null = null;
+                            let isEscaped = false;
+
+                            while (i < input.length) {
+                                const char = input[i];
+                                if (isEscaped) {
+                                    isEscaped = false;
+                                } else if (char === '\\') {
+                                    isEscaped = true;
+                                } else if (inString) {
+                                    if (char === inString) {
+                                        inString = null;
+                                    }
+                                } else if (char === '"' || char === "'") {
+                                    inString = char;
+                                } else if (char === '(') {
+                                    depth++;
+                                } else if (char === ')') {
+                                    depth--;
+                                }
+
+                                if (depth === 0 && !inString) {
+                                    if (i + 1 < input.length && input[i + 1] === '^') {
+                                        results.push({
+                                            tagName,
+                                            tagContent: input.substring(contentStartIdx, i),
+                                            tagStart: baseOffset + start,
+                                            tagEnd: baseOffset + i + 2,
+                                            contentStart: baseOffset + contentStartIdx
+                                        });
+                                        i += 2;
+                                        break;
+                                    }
+                                    break;
+                                }
+                                i++;
+                            }
+                        } else if (i < input.length && input[i] === '^') {
+                            results.push({
+                                tagName,
+                                tagContent: '',
+                                tagStart: baseOffset + start,
+                                tagEnd: baseOffset + i + 1,
+                                contentStart: -1
+                            });
+                            i++;
+                        }
+                    } else {
+                        i++;
+                    }
+                }
+                return results;
+            };
+
+            const allTags: ExportTagMatch[] = [];
+            const collectRecursively = (input: string, baseOffset: number) => {
+                const tags = findExportTags(input, baseOffset);
+                for (const tag of tags) {
+                    allTags.push(tag);
+                    if (tag.tagContent) collectRecursively(tag.tagContent, tag.contentStart);
+                }
+            };
+
+            collectRecursively(content, 0);
+
+            // Find the most specific (inner-most) tag that contains the cursor
+            const containingTags = allTags
+                .filter(t => offset >= t.tagStart && offset < t.tagEnd)
+                .sort((a, b) => (a.tagEnd - a.tagStart) - (b.tagEnd - b.tagStart));
+
+            if (containingTags.length > 0) {
+                const tag = containingTags[0];
+                const tagNameLower = tag.tagName.toLowerCase();
+                const tagStartPos = document.positionAt(tag.tagStart);
+                const tagEndPos = document.positionAt(tag.tagEnd);
+
+                // If inside content of action-bearing tag, we might want to let Action Code hover handle it
+                if (['value', 'if', 'action', 'do', 'not'].includes(tagNameLower) &&
+                    tag.contentStart !== -1 && offset >= tag.contentStart && offset < (tag.tagEnd - 1)) {
+                    // FALL THROUGH to normal action code hover logic
+                } else {
+                    const tagInfo = tinderboxExportTags.get(tagNameLower);
+                    if (tagInfo) {
+                        const desc = (lang === 'ja' && tagInfo.descriptionJa) ? tagInfo.descriptionJa : tagInfo.description;
+                        return {
+                            contents: { kind: 'markdown', value: `**^${tagInfo.name}^**\n\n*Export Tag*\n\n${desc}` },
+                            range: { start: tagStartPos, end: tagEndPos }
+                        };
+                    }
+                }
+            }
+        }
 
         // Find the word/expression under the cursor
         // This regex captures identifiers, system attributes, and dot-chained expressions

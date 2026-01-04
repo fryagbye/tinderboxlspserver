@@ -2,9 +2,19 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
  
-## [0.2.1] - 2026-01-04
+## [0.2.2] - 2026-01-04
+### Added
+- **Feature**: Full support for Tinderbox Export Code (`.tbxe`). Rich support for `^...^` tags including nested structures and robust parsing.
+- **Improved**: Robust scanner for export tags that accurately handles strings, regex, and escape sequences within tags.
+
 ### Fixed
-- **Hover**: Improved accuracy for `.each()` operators by refining operator-to-type association and enhancing type inference for JSON and XML contexts (e.g., distinguishing between `list.each`, `JSON.each`, and `XML.each` when used on attributes).
+- **Support**: Robust recursive parsing for nested export tags.
+- **Validation**: Protected paths and carets from misdetection by implementing recursive masking in validation.
+- **Completion**: Preserved the leading caret (`^`) when selecting Export Tag completion candidates.
+- **Formatter**: Disabled formatting for `.tbxe` to preserve template layouts and protected path slashes in Action Code.
+
+## [0.2.1] - 2026-01-04
+- Fix: Resolved hover information mismatch for `.each()` operators by refining type inference and context-aware matching (e.g., correctly distinguishing between `list.each`, `JSON.each`, and `XML.each`).
 
 ## [0.2.0] - 2026-01-03
 ### Added

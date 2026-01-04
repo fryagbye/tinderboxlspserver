@@ -7,6 +7,7 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 1. Code Completion
 - **Operators**: Autocomplete for all standard Tinderbox operators (e.g., `linkTo`, `collect`).
 - **Attributes**: Suggestions for System Attributes (e.g., `$Name`, `$Text`) and User Attributes.
+- **Export Tags**: Autocomplete for Export Tags (e.g., `^value()^`, `^if()^`) in template files.
 - **Keywords**: Completion for reserved words (`if`, `else`, `var`, `function`).
 - **Variables & Functions**: Dynamic completion for locally declared variables (`var:string vStr`) and functions.
 - **Snippets**: Function completion includes argument placeholders.
@@ -16,6 +17,7 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 2. Hover Documentation
 - **Operator Details**: Hover over an operator to see its syntax, return type, and description.
 - **Attribute Info**: View descriptions and types for System Attributes.
+- **Export Tag Info**: View official documentation and Japanese translations for Export Tags.
 - **Color Info**: View hex codes and descriptions for named colors.
 - **Bilingual Support**: Toggle between English and Japanese descriptions via `tinderboxActionCodeServer.language`.
 ![Hover](https://github.com/fryagbye/tinderboxlspserver/raw/main/images/hover.gif)
@@ -32,6 +34,11 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Go to Definition**: Jump to the definition of user-defined functions, variables, and arguments within the document.
 - **Scope Awareness**: Context-sensitive jumping that correctly resolves variables even when multiple functions share the same identifier names.
 
+### 5. Export Code Support
+- **Robust Parsing**: Handles nested tags (e.g., `^include(^value()...)^`) and balanced parentheses.
+- **Path Protection**: Intelligently distinguishes between division operators and path separators in paths like `/Templates/Note`.
+- **String & Regex Aware**: Accurately parses tags even when they contain complex regex or strings with parentheses.
+
 ## Configuration
 
 | Setting | Description | Default |
@@ -40,8 +47,12 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 | `tinderboxActionCodeServer.language` | Language for descriptions (`en` or `ja`). | `en` |
 
 ## Usage
-- Files with the `.tbxc` extension are automatically recognized as Tinderbox Action Code and will provide full IDE support.
-- If you are working with other file types (like `.txt`), you can manually set the language mode to **Tinderbox Action Code** via the Language Mode selector in the VS Code status bar.
+The extension automatically recognizes the following file types:
+- **`.tbxa`**: Tinderbox Action Code files.
+- **`.tbxe`**: Tinderbox Export Code (Template) files.
+- **`.tbxc`**: Legacy Tinderbox Action Code files (supported for backward compatibility).
+
+If you are working with other file types (like `.txt`), you can manually set the language mode to **Tinderbox Action Code** or **Tinderbox Export Code** via the Language Mode selector in the VS Code status bar.
 
 ## Requirements
 - VS Code 1.75.0 or higher.
@@ -51,6 +62,13 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
 
 ## Release Notes
+
+### 0.2.2
+- Feature: **Full Export Code Support** (`.tbxe`) with support for nested tags and balanced parentheses.
+- Improved: Robust parsing logic for strings and regex within tags.
+- Fix: Recursive validation masking to prevent false positive diagnostics in complex expressions.
+- Fix: Caret preservation in Export Tag completion.
+- Fix: Formatter improvements for paths and `.tbxe` files.
 
 ### 0.2.1
 - Fix: Resolved hover information mismatch for `.each()` operators by refining type inference and context-aware matching (e.g., correctly distinguishing between `list.each`, `JSON.each`, and `XML.each`).
@@ -62,6 +80,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - Fix: Resolved server crash (`Invalid regular expression`) with unescaped characters.
 - Fix: Enhanced Hover for chained expressions, arguments, and loops.
 - Revert: "Go to Definition" for built-in items was reverted.
+
+<details>
+<summary>Earlier Releases</summary>
 
 ### 0.1.9
 - Fix: Resolved a crash (`Invalid regular expression`) caused by unescaped special characters (like unclosed parentheses) during hover/completion.
@@ -76,8 +97,7 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - Doc: Added information about `.tbxc` extension support.
 - Doc: Improved layout for release notes.
 
-<details>
-<summary>Earlier Releases</summary>
+
 
 ### 0.1.6
 - Fix: Localization (Japanese setting now works).

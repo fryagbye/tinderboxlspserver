@@ -33,7 +33,10 @@ export async function activate(context: ExtensionContext) {
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
         // Register the server for plain text documents
-        documentSelector: [{ scheme: 'file', language: 'tinderbox-action-code' }],
+        documentSelector: [
+            { scheme: 'file', language: 'tinderbox-action-code' },
+            { scheme: 'file', language: 'tinderbox-export-code' }
+        ],
         synchronize: {
             // Notify the server about file changes to '.clientrc files contained in the workspace
             fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
