@@ -31,7 +31,14 @@ import {
     InlayHintKind,
     CodeAction,
     CodeActionKind,
-    CodeActionParams
+    CodeActionParams,
+    ReferenceParams,
+    DocumentHighlight,
+    DocumentHighlightKind,
+    DocumentHighlightParams,
+    WorkspaceSymbolParams,
+    SymbolInformation,
+    Position
 } from 'vscode-languageserver/node';
 
 import {
@@ -46,7 +53,7 @@ const connection = createConnection(ProposedFeatures.all);
 
 // Define token types globally for consistency
 const tokenTypes = ['keyword', 'string', 'number', 'comment', 'variable', 'function', 'property', 'method', 'type', 'parameter', 'enumMember'];
-const tokenModifiers: string[] = [];
+const tokenModifiers: string[] = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
 const legend = { tokenTypes, tokenModifiers };
 
 process.on('uncaughtException', (err: any) => {
@@ -103,6 +110,10 @@ connection.onInitialize((params: InitializeParams) => {
             },
             // Definition Provider capability
             definitionProvider: true,
+            // References Provider capability
+            referencesProvider: true,
+            // Document Highlight Provider capability
+            documentHighlightProvider: true,
             // Document Formatting capability
             documentFormattingProvider: true,
             // Document Symbol capability
@@ -114,7 +125,9 @@ connection.onInitialize((params: InitializeParams) => {
             // Inlay Hint capability
             inlayHintProvider: true,
             // Code Action capability
-            codeActionProvider: true
+            codeActionProvider: true,
+            // Workspace Symbol capability
+            workspaceSymbolProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -386,6 +399,52 @@ connection.onDocumentSymbol(async (params: DocumentSymbolParams): Promise<Docume
     return symbols;
 });
 
+connection.onWorkspaceSymbol((params: WorkspaceSymbolParams): SymbolInformation[] => {
+    const query = params.query.toLowerCase();
+    const symbols: SymbolInformation[] = [];
+
+    // currently we only scan open documents
+    // Note: A true workspace scan requires fs-based walking
+    documents.all().forEach(doc => {
+        const text = doc.getText();
+
+        // 1. Functions
+        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
+        let match;
+        while ((match = functionPattern.exec(text)) !== null) {
+            const name = match[1];
+            if (name.toLowerCase().includes(query)) {
+                const startPos = doc.positionAt(match.index);
+                const endPos = doc.positionAt(match.index + match[0].length);
+                symbols.push({
+                    name: name,
+                    kind: SymbolKind.Function,
+                    location: Location.create(doc.uri, Range.create(startPos, endPos)),
+                    containerName: 'tinderbox function'
+                });
+            }
+        }
+
+        // 2. Variables
+        const varPattern = /var(?::[a-zA-Z0-9]+)?\s+([a-zA-Z0-9_]+)/g;
+        while ((match = varPattern.exec(text)) !== null) {
+            const name = match[1];
+            // Skip variables that look like typical arguments (often very short or inside lists)
+            if (name.toLowerCase().includes(query) && name.length > 1) {
+                const startPos = doc.positionAt(match.index);
+                const endPos = doc.positionAt(match.index + match[0].length);
+                symbols.push({
+                    name: name,
+                    kind: SymbolKind.Variable,
+                    location: Location.create(doc.uri, Range.create(startPos, endPos))
+                });
+            }
+        }
+    });
+
+    return symbols;
+});
+
 connection.onPrepareRename(async (params: TextDocumentPositionParams): Promise<PrepareRenameResult | null> => {
     await resourcesPromise;
     const doc = documents.get(params.textDocument.uri);
@@ -394,20 +453,16 @@ connection.onPrepareRename(async (params: TextDocumentPositionParams): Promise<P
     const text = doc.getText();
     const offset = doc.offsetAt(params.position);
 
-    // Find the word at the position
-    const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
-    const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
-    const word = before + after;
+    const tokens = tokenize(text);
+    const targetToken = tokens.find(t =>
+        (t.type === 'Identifier' || t.type === 'Keyword') &&
+        offset >= t.start && offset <= t.start + t.length
+    );
+    if (!targetToken) return null;
 
-    if (!word || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(word)) {
-        return null;
-    }
-
-    // Find the range of the word
-    const start = offset - before.length;
     return {
-        range: Range.create(doc.positionAt(start), doc.positionAt(start + word.length)),
-        placeholder: word
+        range: Range.create(doc.positionAt(targetToken.start), doc.positionAt(targetToken.start + targetToken.length)),
+        placeholder: targetToken.value
     };
 });
 
@@ -417,57 +472,12 @@ connection.onRenameRequest(async (params: RenameParams): Promise<WorkspaceEdit |
     const doc = documents.get(textDocument.uri);
     if (!doc) return null;
 
-    const text = doc.getText();
     const offset = doc.offsetAt(position);
-    const before = text.slice(0, offset).split(/[\s,()=+\-*/|&{}]/).pop() || '';
-    const after = text.slice(offset).split(/[\s,()=+\-*/|&{}]/)[0] || '';
-    const oldName = before + after;
+    const locations = getReferenceLocations(doc, offset);
 
-    if (!oldName) return null;
+    if (!locations || locations.length === 0) return null;
 
-    const edits: TextEdit[] = [];
-
-    // Determine scope: Global or current function
-    // This is a simplified scope detection
-    let functionScope: { start: number, end: number } | null = null;
-    const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/g;
-    let match;
-    while ((match = functionPattern.exec(text)) !== null) {
-        let braceCount = 1;
-        let endOffset = match.index + match[0].length;
-        while (braceCount > 0 && endOffset < text.length) {
-            if (text[endOffset] === '{') braceCount++;
-            else if (text[endOffset] === '}') braceCount--;
-            endOffset++;
-        }
-        if (offset >= match.index && offset <= endOffset) {
-            functionScope = { start: match.index, end: endOffset };
-            break;
-        }
-    }
-
-    // Find all occurrences of oldName in the determined scope
-    // We use a regex that ensures it's a whole word and not inside a string or comment
-    const searchPattern = new RegExp(`\\b${oldName}\\b`, 'g');
-    const searchRange = functionScope ? text.slice(functionScope.start, functionScope.end) : text;
-    const searchOffset = functionScope ? functionScope.start : 0;
-
-    let searchMatch;
-    while ((searchMatch = searchPattern.exec(searchRange)) !== null) {
-        const absoluteIndex = searchMatch.index + searchOffset;
-
-        // Basic check to see if it's inside a string or comment (very simplified)
-        const textToMatch = text.slice(0, absoluteIndex);
-        const isInString = (textToMatch.split('"').length % 2 === 0) || (textToMatch.split("'").length % 2 === 0);
-        const isInComment = textToMatch.split('\n').pop()?.includes('//');
-
-        if (!isInString && !isInComment) {
-            edits.push(TextEdit.replace(
-                Range.create(doc.positionAt(absoluteIndex), doc.positionAt(absoluteIndex + oldName.length)),
-                newName
-            ));
-        }
-    }
+    const edits: TextEdit[] = locations.map(loc => TextEdit.replace(loc.range, newName));
 
     return {
         changes: {
@@ -719,7 +729,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
                     const suppressSemicolon = lowerTagName === 'value';
 
                     // --- MASK NESTED TAGS for parent validation ---
-                    // If we are validating ^if(...)^, we should mask any ^value()^ inside it 
+                    // If we are validating ^if(...)^, we should mask any ^value()^ inside it
                     // so the inner carets and content don't interfere with parent's action code validation.
                     let contentToValidate = tag.tagContent;
                     for (const otherTag of allTags) {
@@ -1904,6 +1914,34 @@ connection.onCompletion(
             data: { language: lang }
         });
 
+        // --- NEW: Control flow Snippets (each, if, ifelse) ---
+        completions.push({
+            label: 'each',
+            kind: CompletionItemKind.Snippet,
+            insertText: '\\$${1:MyList}.each(${2:loopVar}){\n\t$0\n}',
+            insertTextFormat: InsertTextFormat.Snippet,
+            detail: 'Iterate over a list (each loop)',
+            data: { language: lang }
+        });
+
+        completions.push({
+            label: 'if',
+            kind: CompletionItemKind.Snippet,
+            insertText: 'if(${1:condition}){\n\t$0\n}',
+            insertTextFormat: InsertTextFormat.Snippet,
+            detail: 'if block',
+            data: { language: lang }
+        });
+
+        completions.push({
+            label: 'ifelse',
+            kind: CompletionItemKind.Snippet,
+            insertText: 'if(${1:condition}){\n\t$2\n} else {\n\t$0\n}',
+            insertTextFormat: InsertTextFormat.Snippet,
+            detail: 'if/else block',
+            data: { language: lang }
+        });
+
         // --- NEW: Dynamic Function Detection ---
         if (content) {
             // 1. User Functions
@@ -2152,7 +2190,13 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 // Attribute handling
                 if (systemAttributes.has(word)) {
                     // System Attribute -> variable
-                    builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('variable'), 0);
+                    const attr = systemAttributes.get(word);
+                    let modifierMask = 0;
+                    if (attr && attr.readOnly === true) {
+                        modifierMask |= (1 << tokenModifiers.indexOf('readonly'));
+                    }
+                    modifierMask |= (1 << tokenModifiers.indexOf('defaultLibrary'));
+                    builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('variable'), modifierMask);
                 } else {
                     // User Attribute -> enumMember (distinct color)
                     builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('enumMember'), 0);
@@ -2333,164 +2377,144 @@ connection.onHover(
             }
         }
 
-        // Find the word/expression under the cursor
-        // This regex captures identifiers, system attributes, and dot-chained expressions
-        // FIX: Support optional parentheses in the first segment (e.g. $Text(aID). )
-        const wordPattern = /([$a-zA-Z0-9_]+(?:\([^)]*\))?(?:\.[a-zA-Z0-9_]+(?:\([^)]*\))?)*)/g;
-        let match;
+        // Find the word/expression under the cursor using Tokenizer
+        const tokens = tokenize(content);
+        const targetIndex = tokens.findIndex((t: Token) => offset >= t.start && offset <= t.start + t.length);
+
         let hoveredWord = '';
         let hoveredRange: Range | undefined;
 
-        while ((match = wordPattern.exec(content)) !== null) {
-            const startOffset = match.index;
-            const endOffset = match.index + match[0].length;
+        if (targetIndex !== -1) {
+            const targetToken = tokens[targetIndex];
 
-            if (offset >= startOffset && offset <= endOffset) {
-                const chain = match[0];
-                let currentSegStart = startOffset;
-                const segments = chain.split('.');
+            if (targetToken.type === 'Identifier' || targetToken.type === 'Keyword') {
+                hoveredWord = targetToken.value;
+                hoveredRange = {
+                    start: document.positionAt(targetToken.start),
+                    end: document.positionAt(targetToken.start + targetToken.length)
+                };
 
-                for (let i = 0; i < segments.length; i++) {
-                    const seg = segments[i];
-                    const segLen = seg.length;
-                    const segEnd = currentSegStart + segLen;
+                // Priority 1: Check for Designator
+                const designator = tinderboxDesignators.get(hoveredWord.toLowerCase());
+                if (designator) {
+                    const desc = (lang === 'ja' && designator.descriptionJa) ? designator.descriptionJa : designator.description;
+                    return {
+                        contents: { kind: 'markdown', value: `**${designator.name}**\n\n*Designator*\n\n${desc}` },
+                        range: hoveredRange
+                    };
+                }
 
-                    if (offset >= currentSegStart && offset <= segEnd) {
-                        // --- NEW: Priority Argument/Word Inside Parentheses ---
-                        // If cursor is inside (...), try to find the word there first
-                        const parenMatch = seg.match(/\((.*)\)$/);
-                        if (parenMatch) {
-                            const argsInside = parenMatch[1];
-                            const parenStartInSeg = seg.indexOf('(');
-                            const argsStartInDoc = currentSegStart + parenStartInSeg + 1;
-                            const argsEndInDoc = argsStartInDoc + argsInside.length;
+                // Priority 2: System Attribute
+                if (hoveredWord.startsWith('$')) {
+                    const attr = systemAttributes.get(hoveredWord);
+                    if (attr) {
+                        const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
+                        return {
+                            contents: { kind: 'markdown', value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n\n${desc}` },
+                            range: hoveredRange
+                        };
+                    }
+                }
 
-                            if (offset >= argsStartInDoc && offset <= argsEndInDoc) {
-                                // Find the specific word under cursor within parentheses
-                                // We split by common delimiters in Tinderbox actions
-                                const argWordPattern = /[$a-zA-Z0-9_/.]+/g;
-                                let argMatch;
-                                while ((argMatch = argWordPattern.exec(argsInside)) !== null) {
-                                    const argWordStart = argsStartInDoc + argMatch.index;
-                                    const argWordEnd = argWordStart + argMatch[0].length;
-                                    if (offset >= argWordStart && offset <= argWordEnd) {
-                                        const argWord = argMatch[0];
+                // Priority 3: Data Type (Type declaration context)
+                let isTypeDecl = false;
+                let scanIdx = targetIndex - 1;
+                while (scanIdx >= 0 && tokens[scanIdx].type === 'Whitespace') scanIdx--;
+                if (scanIdx >= 0 && tokens[scanIdx].type === 'Punctuation' && tokens[scanIdx].value === ':') {
+                    isTypeDecl = true;
+                }
 
-                                        // PRIORITY 1: Designator
-                                        const designator = tinderboxDesignators.get(argWord.toLowerCase());
-                                        if (designator) {
-                                            const desc = (lang === 'ja' && designator.descriptionJa) ? designator.descriptionJa : designator.description;
-                                            return {
-                                                contents: { kind: 'markdown', value: `**${designator.name}**\n\n*Designator*\n\n${desc}` },
-                                                range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
-                                            };
-                                        }
+                if (isTypeDecl) {
+                    const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
+                    if (typeInfo) {
+                        const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
+                        return {
+                            contents: { kind: 'markdown', value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}` },
+                            range: hoveredRange
+                        };
+                    }
+                }
 
-                                        // PRIORITY 2: System Attribute in args
-                                        if (argWord.startsWith('$')) {
-                                            const attr = systemAttributes.get(argWord);
-                                            if (attr) {
-                                                const desc = (lang === 'ja' && attr.descriptionJa) ? attr.descriptionJa : attr.description;
-                                                return {
-                                                    contents: { kind: 'markdown', value: `**${attr.name}**\n\n*Type*: ${attr.type}\n*Group*: ${attr.group}\n\n${desc}` },
-                                                    range: { start: document.positionAt(argWordStart), end: document.positionAt(argWordEnd) }
-                                                };
-                                            }
-                                        }
-                                        // Fall through or continue to next argWord
-                                    }
-                                }
+                // Determine if we are part of a dot-chain to get prefixExpr
+                let prefixExpr = '';
+                let prevIdx = targetIndex - 1;
+                while (prevIdx >= 0 && tokens[prevIdx].type === 'Whitespace') prevIdx--;
+
+                if (prevIdx >= 0 && tokens[prevIdx].type === 'Punctuation' && tokens[prevIdx].value === '.') {
+                    // We have a prefix! Backtrack to find the start of the expression
+                    let exprStartTokenIdx = prevIdx - 1;
+                    let parenDepth = 0;
+                    while (exprStartTokenIdx >= 0) {
+                        const t = tokens[exprStartTokenIdx];
+                        if (t.type === 'Punctuation' && t.value === ')') {
+                            parenDepth++;
+                        } else if (t.type === 'Punctuation' && t.value === '(') {
+                            parenDepth--;
+                            if (parenDepth < 0) {
+                                exprStartTokenIdx++; // exclude this '('
+                                break;
+                            }
+                        } else if (parenDepth === 0) {
+                            // Any operator or specific punctuation breaks the expression
+                            if (t.type === 'Operator' || (t.type === 'Punctuation' && t.value !== '.')) {
+                                exprStartTokenIdx++;
+                                break;
                             }
                         }
+                        exprStartTokenIdx--;
+                    }
+                    if (exprStartTokenIdx < 0) exprStartTokenIdx = 0;
 
-                        // --- Normal Segment Handling (Variable, Attribute, Operator, Type) ---
-                        hoveredWord = seg.replace(/\(.*\)$/, '');
+                    prefixExpr = content.substring(tokens[exprStartTokenIdx].start, tokens[prevIdx].start).trim();
+                }
 
-                        // FIX: Check for type declaration context (preceded by :)
-                        let isTypeDecl = false;
-                        let scanIdx = currentSegStart - 1;
-                        while (scanIdx >= 0 && /\s/.test(content[scanIdx])) scanIdx--;
-                        if (scanIdx >= 0 && content[scanIdx] === ':') isTypeDecl = true;
-
-                        if (isTypeDecl) {
-                            const typeInfo = tinderboxDataTypes.get(hoveredWord.toLowerCase());
-                            if (typeInfo) {
-                                const desc = (lang === 'ja' && typeInfo.descriptionJa) ? typeInfo.descriptionJa : typeInfo.description;
-                                return {
-                                    contents: { kind: 'markdown', value: `**${typeInfo.name}**\n\n*Data Type*\n\n${desc}` },
-                                    range: { start: document.positionAt(currentSegStart), end: document.positionAt(segEnd) }
-                                };
-                            }
+                if (prefixExpr) {
+                    const inferredType = evaluateExpressionType(prefixExpr, (() => {
+                        const vars = new Map<string, string>();
+                        const varRegex = /var(?::([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)/g;
+                        let m;
+                        while ((m = varRegex.exec(content))) {
+                            if (m[1] && m[2]) vars.set(m[2], m[1].toLowerCase());
                         }
+                        return vars;
+                    })());
 
-                        // If it's not the first segment (variable), we need the prefix chain to infer type
-                        // e.g. prefix = "vList"
-                        if (i > 0) {
-                            const prefixExpr = segments.slice(0, i).join('.');
-                            const inferredType = evaluateExpressionType(prefixExpr, (() => {
-                                const vars = new Map<string, string>();
-                                const varRegex = /var(?::([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)/g;
-                                let m;
-                                while ((m = varRegex.exec(content))) {
-                                    if (m[1] && m[2]) vars.set(m[2], m[1].toLowerCase());
-                                }
-                                return vars;
-                            })());
-
-                            if (inferredType) {
-                                const methods = typeMethods.get(inferredType.toLowerCase());
-                                if (methods) {
-                                    const op = methods.find(m => {
-                                        const suffix = m.name.split('.').pop();
-                                        const cleanSuffix = suffix?.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
-                                        return cleanSuffix === hoveredWord;
-                                    });
-                                    if (op) {
-                                        const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
-                                        return {
-                                            contents: {
-                                                kind: 'markdown',
-                                                value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
-                                            },
-                                            range: {
-                                                start: document.positionAt(currentSegStart),
-                                                end: document.positionAt(segEnd)
-                                            }
-                                        };
-                                    }
-                                }
-                            }
-
-                            // FALLBACK: Try dotOperatorsMap (Global Suffix match) if specific type inference failed or didn't yield result
-                            const ops = dotOperatorsMap.get(hoveredWord);
-                            if (ops && ops.length > 0) {
-                                // Fix: Prefer standard operators over JSON/XML in global fallback
-                                const op = ops.find(o => !o.name.toLowerCase().startsWith('json.') && !o.name.toLowerCase().startsWith('xml.')) || ops[0];
+                    if (inferredType) {
+                        const methods = typeMethods.get(inferredType.toLowerCase());
+                        if (methods) {
+                            const op = methods.find((m: any) => {
+                                const suffix = m.name.split('.').pop();
+                                const cleanSuffix = suffix?.replace(/\(.*\)$/, '').replace(/\{.*\}$/, '').replace(/\(.*\)/, '');
+                                return cleanSuffix === hoveredWord;
+                            });
+                            if (op) {
                                 const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
                                 return {
                                     contents: {
                                         kind: 'markdown',
                                         value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
                                     },
-                                    range: {
-                                        start: document.positionAt(currentSegStart),
-                                        end: document.positionAt(segEnd)
-                                    }
+                                    range: hoveredRange
                                 };
                             }
                         }
-
-                        // If first segment or inference failed, use basic lookup below
-                        hoveredRange = {
-                            start: document.positionAt(currentSegStart),
-                            end: document.positionAt(segEnd)
-                        };
-                        break;
                     }
-                    currentSegStart = segEnd + 1; // +1 for dot
                 }
-                if (!hoveredWord) hoveredWord = match[0]; // Fallback to whole match if logic fails
-                break;
+
+                // FALLBACK: Try dotOperatorsMap (Global Suffix match)
+                const ops = dotOperatorsMap.get(hoveredWord);
+                if (ops && ops.length > 0) {
+                    // Prefer standard operators over JSON/XML in global fallback
+                    const op = ops.find((o: any) => !o.name.toLowerCase().startsWith('json.') && !o.name.toLowerCase().startsWith('xml.')) || ops[0];
+                    const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                    return {
+                        contents: {
+                            kind: 'markdown',
+                            value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                        },
+                        range: hoveredRange
+                    };
+                }
             }
         }
 
@@ -2535,6 +2559,19 @@ connection.onHover(
                 contents: {
                     kind: 'markdown',
                     value: `**${op.name}**\n*${op.type}* -> ${op.returnType}\n\n\`\`\`tinderbox\n${op.signature}\n\`\`\`\n\n${desc}`
+                },
+                range: hoveredRange
+            };
+        }
+
+        // 2.5 Designators (Fallback lookup for bare designators)
+        const designator = tinderboxDesignators.get(hoveredWord.toLowerCase());
+        if (designator) {
+            const desc = (lang === 'ja' && designator.descriptionJa) ? designator.descriptionJa : designator.description;
+            return {
+                contents: {
+                    kind: 'markdown',
+                    value: `**${designator.name}**\n\n*Designator*\n\n${desc}`
                 },
                 range: hoveredRange
             };
@@ -2638,186 +2675,415 @@ connection.onSignatureHelp(async (params) => {
     const offset = doc.offsetAt(params.position);
     const text = doc.getText();
 
-    // Simple backward scan to find the function name before the open parenthesis
-    // We look for Identifier followed by '(' and maybe some args
+    // Use tokenizer to reliably find the opening parenthesis and count commas
+    const textBeforeCursor = text.substring(0, offset);
+    // Limit to last 2000 chars for performance
+    const scanText = textBeforeCursor.length > 2000 ? textBeforeCursor.substring(textBeforeCursor.length - 2000) : textBeforeCursor;
+    const tokens = tokenize(scanText);
 
-    let openParenCount = 0;
-    let scanIdx = offset - 1;
-    while (scanIdx >= 0) {
-        const char = text[scanIdx];
-        if (char === ')') {
-            openParenCount++;
-        } else if (char === '(') {
-            if (openParenCount > 0) {
-                openParenCount--;
+    // Filter out whitespaces and comments
+    const activeTokens = tokens.filter(t => t.type !== 'Whitespace' && t.type !== 'Comment');
+
+    let nestedParens = 0;
+    let activeParameter = 0;
+    let foundOpenParenIndex = -1;
+
+    for (let i = activeTokens.length - 1; i >= 0; i--) {
+        const token = activeTokens[i];
+        if (token.type === 'Punctuation' && token.value === ')') {
+            nestedParens++;
+        } else if (token.type === 'Punctuation' && token.value === '(') {
+            if (nestedParens > 0) {
+                nestedParens--;
             } else {
-                // Found the opening paren of the current call
-                // slice text before this paren to find the word
-                const beforeParen = text.slice(0, scanIdx).trimEnd();
-                const match = beforeParen.match(/([a-zA-Z0-9_.]+)$/);
-                if (match) {
-                    const word = match[1];
-
-                    // Simple active parameter calculation by counting commas inside the current paren
-                    const callText = text.slice(scanIdx + 1, offset);
-                    // Match top-level commas (not inside nested parens)
-                    let commaCount = 0;
-                    let pDepth = 0;
-                    for (const c of callText) {
-                        if (c === '(') pDepth++;
-                        else if (c === ')') pDepth--;
-                        else if (c === ',' && pDepth === 0) commaCount++;
-                    }
-
-                    const op = tinderboxOperators.get(word);
-                    if (op) {
-                        const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
-                        return {
-                            signatures: [{
-                                label: op.signature,
-                                documentation: { kind: 'markdown', value: desc },
-                                parameters: []
-                            }],
-                            activeSignature: 0,
-                            activeParameter: commaCount
-                        };
-                    }
-
-                    const d = tinderboxDesignators.get(word.toLowerCase());
-                    if (d) {
-                        const desc = (lang === 'ja' && d.descriptionJa) ? d.descriptionJa : d.description;
-                        return {
-                            signatures: [{
-                                label: `${d.name}(...)`,
-                                documentation: { kind: 'markdown', value: desc },
-                                parameters: []
-                            }],
-                            activeSignature: 0,
-                            activeParameter: commaCount
-                        };
-                    }
-                }
+                foundOpenParenIndex = i;
                 break;
             }
+        } else if (token.type === 'Punctuation' && token.value === ',' && nestedParens === 0) {
+            activeParameter++;
         }
-        scanIdx--;
-        // Limit scan back to avoid performance issues
-        if (offset - scanIdx > 1000) break;
+    }
+
+    if (foundOpenParenIndex > 0) {
+        // Find the function name. Could be a dot chain.
+        let i = foundOpenParenIndex - 1;
+        let funcNameParts = [];
+
+        while (i >= 0) {
+            const t = activeTokens[i];
+            // Include Keyword because functions like "each" might be tokenized as Keyword
+            if (t.type === 'Identifier' || t.type === 'Keyword') {
+                funcNameParts.unshift(t.value);
+            } else if (t.type === 'Punctuation' && t.value === '.') {
+                funcNameParts.unshift('.');
+            } else {
+                break;
+            }
+            i--;
+        }
+
+        const fullFuncName = funcNameParts.join('');
+        if (fullFuncName) {
+            let op = tinderboxOperators.get(fullFuncName);
+            if (!op) {
+                // Try last part
+                const match = fullFuncName.match(/([a-zA-Z0-9_.]+)$/);
+                if (match) {
+                    const word = match[1];
+                    op = tinderboxOperators.get(word);
+                    if (!op && funcNameParts.length > 0) {
+                        const lastWord = funcNameParts[funcNameParts.length - 1];
+                        op = Array.from(tinderboxOperators.values()).find(o => o.name.toLowerCase() === lastWord.toLowerCase() || o.name.endsWith('.' + lastWord));
+                    }
+                }
+            }
+
+            if (op) {
+                const desc = (lang === 'ja' && op.descriptionJa) ? op.descriptionJa : op.description;
+                return {
+                    signatures: [{
+                        label: op.signature,
+                        documentation: { kind: 'markdown', value: desc },
+                        parameters: []
+                    }],
+                    activeSignature: 0,
+                    activeParameter: activeParameter
+                };
+            }
+
+            const lastPart = funcNameParts[funcNameParts.length - 1];
+            if (lastPart) {
+                const d = tinderboxDesignators.get(lastPart.toLowerCase());
+                if (d) {
+                    const desc = (lang === 'ja' && d.descriptionJa) ? d.descriptionJa : d.description;
+                    return {
+                        signatures: [{
+                            label: `${d.name}(...)`,
+                            documentation: { kind: 'markdown', value: desc },
+                            parameters: []
+                        }],
+                        activeSignature: 0,
+                        activeParameter: activeParameter
+                    };
+                }
+            }
+        }
     }
 
     return null;
 });
 
-// --- Definition Handler ---
+function isDeclaration(tokens: Token[], identifierIndex: number, functionStartOffset: number = 0): boolean {
+    let j = identifierIndex - 1;
+    while (j >= 0 && tokens[j].type === 'Whitespace') j--;
+    if (j < 0) return false;
+
+    // 1. var decl (var x or var:Type x)
+    if (tokens[j].value === 'var') return true;
+    if (tokens[j].type === 'Identifier') {
+        let k = j - 1;
+        while (k >= 0 && tokens[k].type === 'Whitespace') k--;
+        if (k >= 0 && tokens[k].value === ':') {
+            k--;
+            while (k >= 0 && tokens[k].type === 'Whitespace') k--;
+            if (k >= 0 && tokens[k].value === 'var') return true;
+        }
+    }
+
+    // 2. function decl (function x)
+    if (tokens[j].value === 'function') return true;
+
+    // 3. loop var (.each(x))
+    if (tokens[j].value === '(') {
+        let k = j - 1;
+        while (k >= 0 && tokens[k].type === 'Whitespace') k--;
+        if (k >= 0 && (tokens[k].value === 'each' || tokens[k].value === 'eachLine')) return true;
+    }
+
+    // 4. function argument
+    let depthCounter = 0;
+    let foundFunction = false;
+    for (let k = identifierIndex - 1; k >= 0; k--) {
+        if (tokens[k].start < functionStartOffset) break;
+        if (tokens[k].value === ')') depthCounter++;
+        else if (tokens[k].value === '(') {
+            depthCounter--;
+            if (depthCounter < 0) {
+                let m = k - 1;
+                while (m >= 0 && tokens[m].type === 'Whitespace') m--;
+                if (m >= 0 && tokens[m].type === 'Identifier') {
+                    m--;
+                    while (m >= 0 && tokens[m].type === 'Whitespace') m--;
+                    if (m >= 0 && tokens[m].value === 'function') {
+                        foundFunction = true;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    if (foundFunction && depthCounter < 0) return true;
+
+    return false;
+}
+
 connection.onDefinition(
     async (params: TextDocumentPositionParams): Promise<Definition | null> => {
         await resourcesPromise;
         const document = documents.get(params.textDocument.uri);
         if (!document) return null;
 
-        const content = document.getText();
+        const text = document.getText();
         const offset = document.offsetAt(params.position);
 
-        // 1. Identify word under cursor
-        // Re-use logic similar to hover but simplified for just name
-        const line = document.getText({
-            start: { line: params.position.line, character: 0 },
-            end: { line: params.position.line, character: 1000 }
-        });
+        const tokens = tokenize(text);
+        const targetToken = tokens.find(t =>
+            (t.type === 'Identifier' || t.type === 'Keyword') &&
+            offset >= t.start && offset <= t.start + t.length
+        );
+        if (!targetToken) return null;
+        const targetName = targetToken.value;
 
-        // Extract word at the specific position
-        const wordRegex = /[$a-zA-Z0-9_]+/g;
-        let m;
-        let targetWord = '';
-        while ((m = wordRegex.exec(line))) {
-            if (params.position.character >= m.index && params.position.character <= m.index + m[0].length) {
-                targetWord = m[0];
-                break;
-            }
-        }
-
-        if (!targetWord) return null;
-
-        // --- 1. Scoped Search (Function / Iterator block) ---
-        // Find the start of the current block by scanning backwards for '{'
-        let scopeContent = '';
-        let scopeStartOffset = -1;
-        let depth = 0;
-        for (let i = offset - 1; i >= 0; i--) {
-            if (content[i] === '}') depth++;
-            else if (content[i] === '{') {
-                if (depth > 0) depth--;
-                else {
-                    // Found the start of the current scope
-                    scopeStartOffset = i;
-                    scopeContent = content.substring(i, offset);
-                    break;
+        // Determine scope
+        let functionScope: { start: number, end: number } | null = null;
+        let braceDepth = 0;
+        let functionStart = -1;
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t.type === 'Keyword' && t.value === 'function') functionStart = t.start;
+            if (t.type === 'Punctuation' && t.value === '{') braceDepth++;
+            if (t.type === 'Punctuation' && t.value === '}') {
+                braceDepth--;
+                if (braceDepth === 0 && functionStart !== -1) {
+                    if (offset >= functionStart && offset <= t.start + t.length) {
+                        functionScope = { start: functionStart, end: t.start + t.length };
+                        break;
+                    }
+                    functionStart = -1;
                 }
             }
         }
 
-        if (scopeStartOffset !== -1) {
-            // a. Check for Loop Variable in the preceding iterator call: .each(Name)
-            const textBeforeScope = content.substring(Math.max(0, scopeStartOffset - 100), scopeStartOffset);
-            const iterMatch = textBeforeScope.match(/\.each(?:Line)?\s*\(\s*([$a-zA-Z0-9_]+)(?::[a-zA-Z0-9_]+)?\s*(?:,[^)]*)?\)\s*$/);
-            if (iterMatch && iterMatch[1] === targetWord) {
-                const nameIdx = iterMatch[0].indexOf(targetWord);
-                return Location.create(params.textDocument.uri, {
-                    start: document.positionAt(scopeStartOffset - (iterMatch[0].length - nameIdx)),
-                    end: document.positionAt(scopeStartOffset - (iterMatch[0].length - nameIdx - targetWord.length))
-                });
+        // 1. Check local scope first
+        if (functionScope) {
+            for (let i = 0; i < tokens.length; i++) {
+                const t = tokens[i];
+                if (t.start >= functionScope.start && t.start + t.length <= functionScope.end) {
+                    if (t.type === 'Identifier' && t.value === targetName) {
+                        if (isDeclaration(tokens, i, functionScope.start)) {
+                            return Location.create(document.uri, {
+                                start: document.positionAt(t.start),
+                                end: document.positionAt(t.start + t.length)
+                            });
+                        }
+                    }
+                }
             }
+        }
 
-            // b. Check for Function Arguments of the enclosing function
-            const funcMatch = textBeforeScope.match(/function\s+[a-zA-Z0-9_]+\s*\(([^)]*)\)\s*$/);
-            if (funcMatch) {
-                const args = funcMatch[1];
-                const argRegex = new RegExp(`\\b${escapeRegExp(targetWord)}\\b`);
-                const mArg = args.match(argRegex);
-                if (mArg) {
-                    const argNameOffset = scopeStartOffset - (funcMatch[0].length - funcMatch[0].indexOf(args)) + mArg.index!;
-                    return Location.create(params.textDocument.uri, {
-                        start: document.positionAt(argNameOffset),
-                        end: document.positionAt(argNameOffset + targetWord.length)
+        // 2. Fallback to global search
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t.type === 'Identifier' && t.value === targetName) {
+                if (isDeclaration(tokens, i, 0)) {
+                    return Location.create(document.uri, {
+                        start: document.positionAt(t.start),
+                        end: document.positionAt(t.start + t.length)
                     });
                 }
             }
-
-            // c. Check for Variable Declarations within this scope before the cursor
-            const varPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${escapeRegExp(targetWord)}\\b`, 'g');
-            let mVar;
-            while ((mVar = varPattern.exec(scopeContent))) {
-                return Location.create(params.textDocument.uri, {
-                    start: document.positionAt(scopeStartOffset + mVar.index),
-                    end: document.positionAt(scopeStartOffset + mVar.index + mVar[0].length)
-                });
-            }
-        }
-
-        // --- 2. Global Search (Fallback or Global items like Functions) ---
-        // a. Function Definitions: function Name
-        const funcPattern = new RegExp(`function\\s+${escapeRegExp(targetWord)}\\b`, 'g');
-        let mFunc;
-        while ((mFunc = funcPattern.exec(content))) {
-            return Location.create(params.textDocument.uri, {
-                start: document.positionAt(mFunc.index),
-                end: document.positionAt(mFunc.index + mFunc[0].length)
-            });
-        }
-
-        // b. Variable Declarations (Global fallback)
-        const globalVarPattern = new RegExp(`var(?::[a-zA-Z0-9_]+)?\\s+${escapeRegExp(targetWord)}\\b`, 'g');
-        let mGlobalVar;
-        while ((mGlobalVar = globalVarPattern.exec(content))) {
-            return Location.create(params.textDocument.uri, {
-                start: document.positionAt(mGlobalVar.index),
-                end: document.positionAt(mGlobalVar.index + mGlobalVar[0].length)
-            });
         }
 
         return null;
     }
 );
+
+interface Token {
+    type: 'Comment' | 'String' | 'Number' | 'Keyword' | 'Identifier' | 'Operator' | 'Punctuation' | 'Whitespace' | 'ExportTag';
+    value: string;
+    start: number;
+    length: number;
+}
+
+function tokenize(text: string): Token[] {
+    const tokens: Token[] = [];
+    let i = 0;
+    while (i < text.length) {
+        const char = text[i];
+
+        // Whitespace
+        if (/\s/.test(char)) {
+            let start = i;
+            while (i < text.length && /\s/.test(text[i])) i++;
+            tokens.push({ type: 'Whitespace', value: text.substring(start, i), start, length: i - start });
+            continue;
+        }
+
+        // Comment
+        if (char === '/' && text[i + 1] === '/') {
+            let start = i;
+            while (i < text.length && text[i] !== '\n' && text[i] !== '\r') i++;
+            tokens.push({ type: 'Comment', value: text.substring(start, i), start, length: i - start });
+            continue;
+        }
+
+        // String
+        if (char === '"' || char === "'") {
+            let start = i;
+            let inString = char;
+            let isEscaped = false;
+            i++;
+            while (i < text.length) {
+                if (isEscaped) {
+                    isEscaped = false;
+                } else if (text[i] === '\\') {
+                    isEscaped = true;
+                } else if (text[i] === inString) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            tokens.push({ type: 'String', value: text.substring(start, i), start, length: i - start });
+            continue;
+        }
+
+        // Identifier (Variables, Attributes starting with $, functions, keywords)
+        if (/[a-zA-Z_$]/.test(char)) {
+            let start = i;
+            while (i < text.length && /[a-zA-Z0-9_$]/.test(text[i])) i++;
+            const val = text.substring(start, i);
+            let type: Token['type'] = 'Identifier';
+            if (['var', 'function', 'if', 'else', 'while', 'do', 'return', 'each', 'true', 'false'].includes(val)) {
+                type = 'Keyword';
+            }
+            tokens.push({ type, value: val, start, length: i - start });
+            continue;
+        }
+
+        // Number
+        if (/[0-9]/.test(char) || (char === '-' && /[0-9]/.test(text[i + 1]))) {
+            let start = i;
+            if (char === '-') i++;
+            while (i < text.length && /[0-9.]/.test(text[i])) i++;
+            tokens.push({ type: 'Number', value: text.substring(start, i), start, length: i - start });
+            continue;
+        }
+
+        // Operators
+        const ops2 = ['==', '!=', '<=', '>=', '+=', '-=', '*=', '/='];
+        if (i + 1 < text.length && ops2.includes(text.substring(i, i + 2))) {
+            tokens.push({ type: 'Operator', value: text.substring(i, i + 2), start: i, length: 2 });
+            i += 2;
+            continue;
+        }
+        const ops1 = ['+', '-', '*', '/', '=', '<', '>', '&', '|', '!'];
+        if (ops1.includes(char)) {
+            tokens.push({ type: 'Operator', value: char, start: i, length: 1 });
+            i++;
+            continue;
+        }
+
+        // Punctuation
+        const punct = ['(', ')', '{', '}', '[', ']', ',', ';', ':', '.', '^'];
+        if (punct.includes(char)) {
+            tokens.push({ type: 'Punctuation', value: char, start: i, length: 1 });
+            i++;
+            continue;
+        }
+
+        // Unknown
+        tokens.push({ type: 'Identifier', value: char, start: i, length: 1 });
+        i++;
+    }
+    return tokens;
+}
+
+function getReferenceLocations(doc: TextDocument, offset: number): Location[] {
+    const text = doc.getText();
+    const tokens = tokenize(text);
+
+    const targetToken = tokens.find(t =>
+        (t.type === 'Identifier' || t.type === 'Keyword') &&
+        offset >= t.start && offset <= t.start + t.length
+    );
+    if (!targetToken) return [];
+    const targetName = targetToken.value;
+
+    let functionScope: { start: number, end: number } | null = null;
+    let braceDepth = 0;
+    let functionStart = -1;
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type === 'Keyword' && t.value === 'function') functionStart = t.start;
+        if (t.type === 'Punctuation' && t.value === '{') braceDepth++;
+        if (t.type === 'Punctuation' && t.value === '}') {
+            braceDepth--;
+            if (braceDepth === 0 && functionStart !== -1) {
+                if (offset >= functionStart && offset <= t.start + t.length) {
+                    functionScope = { start: functionStart, end: t.start + t.length };
+                    break;
+                }
+                functionStart = -1;
+            }
+        }
+    }
+
+    let isLocal = false;
+    if (functionScope) {
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t.start >= functionScope.start && t.start + t.length <= functionScope.end) {
+                if (t.type === 'Identifier' && t.value === targetName) {
+                    if (isDeclaration(tokens, i, functionScope.start)) {
+                        isLocal = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    const searchStart = isLocal && functionScope ? functionScope.start : 0;
+    const searchEnd = isLocal && functionScope ? functionScope.end : text.length;
+
+    const references: Location[] = [];
+    for (const t of tokens) {
+        if (t.type === 'Identifier' && t.value === targetName) {
+            if (t.start >= searchStart && t.start + t.length <= searchEnd) {
+                references.push(
+                    Location.create(doc.uri, {
+                        start: doc.positionAt(t.start),
+                        end: doc.positionAt(t.start + t.length)
+                    })
+                );
+            }
+        }
+    }
+    return references;
+}
+
+connection.onReferences(async (params: ReferenceParams): Promise<Location[] | null> => {
+    await resourcesPromise;
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+
+    return getReferenceLocations(doc, doc.offsetAt(params.position));
+});
+
+connection.onDocumentHighlight(async (params: DocumentHighlightParams): Promise<DocumentHighlight[] | null> => {
+    await resourcesPromise;
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+
+    const locations = getReferenceLocations(doc, doc.offsetAt(params.position));
+    if (!locations) return null;
+
+    return locations.map(loc => ({
+        range: loc.range,
+        kind: DocumentHighlightKind.Text
+    }));
+});
 
 connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
     const codeActions: CodeAction[] = [];
@@ -2873,6 +3139,52 @@ connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
             }
         }
     });
+
+    // 3. Extract to variable (Refactoring Code Action)
+    // Available when there is a selection on a single line
+    const range = params.range;
+    if (range.start.line === range.end.line && (range.start.character !== range.end.character)) {
+        const doc = documents.get(params.textDocument.uri);
+        if (doc) {
+            const text = doc.getText();
+            // Get the selected text accurately
+            const selectedText = text.substring(doc.offsetAt(range.start), doc.offsetAt(range.end));
+
+            // Basic heuristic: avoid extracting pure whitespace or extremely short generic tokens if not a clear expression
+            // But let's allow it generally if the user selected it.
+            if (selectedText.trim().length > 0) {
+                const varName = 'extractedVar';
+
+                // Get the current line text to find leading whitespace for indentation
+                const lineStartOffset = doc.offsetAt(Position.create(range.start.line, 0));
+                const lineEndOffset = doc.offsetAt(Position.create(range.start.line + 1, 0)) || text.length;
+                const lineText = text.substring(lineStartOffset, lineEndOffset);
+                const leadingWhitespaceMatch = lineText.match(/^(\s*)/);
+                const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[1] : '';
+
+                const insertionText = `${leadingWhitespace}var:string ${varName} = ${selectedText};\n`;
+
+                codeActions.push({
+                    title: `Extract to variable ('${varName}')`,
+                    kind: CodeActionKind.RefactorExtract,
+                    edit: {
+                        changes: {
+                            [params.textDocument.uri]: [
+                                {
+                                    range: Range.create(Position.create(range.start.line, 0), Position.create(range.start.line, 0)),
+                                    newText: insertionText
+                                },
+                                {
+                                    range: range,
+                                    newText: varName
+                                }
+                            ]
+                        }
+                    }
+                });
+            }
+        }
+    }
 
     return codeActions;
 });

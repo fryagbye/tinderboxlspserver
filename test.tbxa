@@ -1,8 +1,25 @@
-var:string vName = "Tinderbox";
-$Name = vName;
-$Color = "red";
-if($Name.count > 0){
-    $Text = "Found";
+// ==========================================
+// 動作検証用テストコード (test.tbxa)
+// ==========================================
+
+
+function processData(vData) {
+    // ここで引数の vData がハイライトされます
+    // コメントの中にある vData や文字列の中の "vData" は無視されるはずです。
+    var:string vMessage = "The value of vData is: " + vData;
+
+    if (vData > 0) {
+        $Text = vMessage;
+    }
 }
-// This should have NO export tags support
-^value($Name)^
+var:number vCounter = 0;
+
+// vCounter をループで使います
+$MyList.each(vCounter) {
+    // 別の変数定義
+    var vTemp = vCounter * 2;
+    processData(vTemp);
+}
+// vDataをRenme (F2) するとどこが変わるか
+// vCounter の「すべての参照の検索」
+// processData の「定義へ移動」をお試しください！

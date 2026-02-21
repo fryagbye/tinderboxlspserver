@@ -33,11 +33,21 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 4. Definition & References
 - **Go to Definition**: Jump to the definition of user-defined functions, variables, and arguments within the document.
 - **Scope Awareness**: Context-sensitive jumping that correctly resolves variables even when multiple functions share the same identifier names.
+- **Workspace Symbols**: Press `Cmd + T` (Mac) or `Ctrl + T` (Windows/Linux) to search for functions and variables across all open documents.
 
-### 5. Export Code Support
+### 5. Advanced Assistance
+- **Signature Help**: Intelligent parameter tracking that correctly counts arguments even through nested parentheses and commas inside strings, highlighting the current parameter you are typing.
+- **Semantic Tokens**: Dynamic modifier assignment. Read-only system attributes receive a `readonly` modifier, and built-in attributes receive `defaultLibrary`, allowing for more precise semantic highlighting in compatible themes.
+- **Code Actions**: Select an expression within a line and use Quick Fix (`Cmd + .`) to "Extract to variable". It automatically inserts a `var:string` definition while preserving indentation.
+- **Enhanced Snippets**: Included control flow snippets specifically for Tinderbox, such as `each`, `if` and `ifelse` blocks.
+
+### 6. Export Code Support
 - **Robust Parsing**: Handles nested tags (e.g., `^include(^value()...)^`) and balanced parentheses.
 - **Path Protection**: Intelligently distinguishes between division operators and path separators in paths like `/Templates/Note`.
 - **String & Regex Aware**: Accurately parses tags even when they contain complex regex or strings with parentheses.
+
+### 7. Token-Based Parsing Engine
+- **Robust State Tracking**: The core parser has been upgraded from simple regex scanning to a robust, token-based state machine. This change significantly improves the accuracy of context-aware features such as signature help, hover information, and variable scoping—especially when dealing with complex nested structures, parentheses, and method chains.
 
 ## Configuration
 
@@ -59,9 +69,17 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 
 ## Known Issues
-- The parser is regex-based, so complex nested structures may occasionally trick the validation logic.
+- While the parser now utilizes a robust token-based approach for high-level language features (such as hover and signature help), some structural validation checks may occasionally be tricked by extremely complex or irregular nested structures.
 
 ## Release Notes
+
+### 0.3.0
+- Feature: **Workspace Symbols** (`Cmd/Ctrl+T`) support for searching functions and variables across documents.
+- Feature: **Code Action** for refactoring: "Extract to variable".
+- Feature: **Enhanced Snippets** tailored for Tinderbox (`each`, `if`, etc).
+- Feature: **Semantic Tokens Evolution**: Added `readonly` and `defaultLibrary` modifiers for System Attributes, allowing distinct coloring for unmodifiable values.
+- Improved: **Signature Help** accuracy massively increased by replacing regex ahead-scanning with tokenizer-based state parsing (respects nested parens and string literals).
+- Fix: Addressed an issue where Hover failed for expressions containing string literals with parentheses or operators (e.g., `vStr.deleteCharacters("()`").lowercase()`). Now uses robust token sequence matching.
 
 ### 0.2.2
 - Feature: **Full Export Code Support** (`.tbxe`) with support for nested tags and balanced parentheses.
