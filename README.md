@@ -73,6 +73,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.1
+- Fix: Normalized multiple carets (`^^` to `^`) in Export Tags auto-completion and hover documentation.
+- Update: Updated internal data types in v2 definition files.
+
 ### 0.3.0
 - Feature: **Workspace Symbols** (`Cmd/Ctrl+T`) support for searching functions and variables across documents.
 - Feature: **Code Action** for refactoring: "Extract to variable".

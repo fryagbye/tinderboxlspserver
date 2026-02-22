@@ -3,7 +3,7 @@
     "description": "LSP Server for Tinderbox Action Code",
     "author": "Antigravity",
     "license": "MIT",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "publisher": "antigravity",
     "engines": {
         "vscode": "^1.75.0"
