@@ -73,6 +73,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.2
+- Fix: Prevented unnecessary addition of double carets (`^^`) in Export Code hover headings.
+- Fix: Preserved caret-enclosed phrases (e.g., `^action^`) from being translated during the `export_tags.csv` translation process.
+
 ### 0.3.1
 - Fix: Normalized multiple carets (`^^` to `^`) in Export Tags auto-completion and hover documentation.
 - Update: Updated internal data types in v2 definition files.
