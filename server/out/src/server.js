@@ -4,6 +4,7 @@ const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const fs = require("fs");
 const path = require("path");
+const vscode_uri_1 = require("vscode-uri");
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
 const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
@@ -11,6 +12,7 @@ const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
 const tokenTypes = ['keyword', 'string', 'number', 'comment', 'variable', 'function', 'property', 'method', 'type', 'parameter', 'enumMember'];
 const tokenModifiers = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
 const legend = { tokenTypes, tokenModifiers };
+const workspaceSymbolCache = new Map(); // Key: file URI
 process.on('uncaughtException', (err) => {
     connection.console.error(`Uncaught Exception: ${err?.message || err}`);
 });
@@ -101,7 +103,84 @@ connection.onInitialized(() => {
             documents.all().forEach(validateTextDocument);
         }, 500);
     });
+    if (hasWorkspaceFolderCapability) {
+        connection.workspace.getWorkspaceFolders().then(folders => {
+            if (folders) {
+                folders.forEach(folder => {
+                    const folderPath = vscode_uri_1.URI.parse(folder.uri).fsPath;
+                    scanWorkspace(folderPath);
+                });
+            }
+        });
+    }
 });
+async function scanWorkspace(dirPath) {
+    try {
+        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+            // Ignore hidden folders (like .git, .vscode)
+            if (entry.isDirectory() && entry.name.startsWith('.'))
+                continue;
+            const fullPath = path.join(dirPath, entry.name);
+            if (entry.isDirectory()) {
+                await scanWorkspace(fullPath);
+            }
+            else if (entry.isFile()) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (['.tbxa', '.tbxc', '.tbxe'].includes(ext)) {
+                    await indexFileForCache(fullPath);
+                }
+            }
+        }
+    }
+    catch (err) {
+        connection.console.warn(`Error scanning directory ${dirPath}: ${err}`);
+    }
+}
+async function indexFileForCache(filePath) {
+    try {
+        const text = await fs.promises.readFile(filePath, 'utf-8');
+        const uri = vscode_uri_1.URI.file(filePath).toString();
+        const tokens = tokenize(text);
+        const symbols = [];
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            // Look for functions and variables
+            if (t.type === 'Identifier') {
+                if (isDeclaration(tokens, i, 0)) {
+                    // Create a dummy document just enough for positionAt
+                    // Using TextDocument.create is safe for this as we only need it for offset conversion
+                    const doc = vscode_languageserver_textdocument_1.TextDocument.create(uri, 'tinderbox-action-code', 1, text);
+                    let kind = node_1.SymbolKind.Variable;
+                    // basic heuristic: if 'function' was behind it
+                    let j = i - 1;
+                    while (j >= 0 && tokens[j].type === 'Whitespace')
+                        j--;
+                    if (j >= 0 && tokens[j].value === 'function') {
+                        kind = node_1.SymbolKind.Function;
+                    }
+                    symbols.push({
+                        name: t.value,
+                        kind: kind,
+                        location: node_1.Location.create(uri, {
+                            start: doc.positionAt(t.start),
+                            end: doc.positionAt(t.start + t.length)
+                        })
+                    });
+                }
+            }
+        }
+        if (symbols.length > 0) {
+            workspaceSymbolCache.set(uri, symbols);
+        }
+        else {
+            workspaceSymbolCache.delete(uri); // clear if it has none
+        }
+    }
+    catch (err) {
+        connection.console.warn(`Error indexing file ${filePath}: ${err}`);
+    }
+}
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 const defaultSettings = { maxNumberOfProblems: 1000, language: 'en' };
 let globalSettings = defaultSettings;
@@ -286,7 +365,9 @@ connection.onWorkspaceSymbol((params) => {
     const symbols = [];
     // currently we only scan open documents
     // Note: A true workspace scan requires fs-based walking
+    const processedUris = new Set();
     documents.all().forEach(doc => {
+        processedUris.add(doc.uri);
         const text = doc.getText();
         // 1. Functions
         const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
@@ -320,6 +401,21 @@ connection.onWorkspaceSymbol((params) => {
             }
         }
     });
+    // 3. Add from global cache for unopened files
+    for (const [uri, globalSymbols] of workspaceSymbolCache.entries()) {
+        if (!processedUris.has(uri)) {
+            for (const sym of globalSymbols) {
+                if (sym.name.toLowerCase().includes(query)) {
+                    symbols.push({
+                        name: sym.name,
+                        kind: sym.kind,
+                        location: sym.location,
+                        containerName: sym.kind === node_1.SymbolKind.Function ? 'tinderbox function' : undefined
+                    });
+                }
+            }
+        }
+    }
     return symbols;
 });
 connection.onPrepareRename(async (params) => {
@@ -447,10 +543,45 @@ documents.onDidChangeContent(change => {
     }
     const timeout = setTimeout(() => {
         validateTextDocument(change.document);
+        updateDocumentCache(change.document);
         pendingValidationRequests.delete(uri);
     }, validationDelay);
     pendingValidationRequests.set(uri, timeout);
 });
+async function updateDocumentCache(doc) {
+    const text = doc.getText();
+    const uri = doc.uri;
+    const tokens = tokenize(text);
+    const symbols = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type === 'Identifier') {
+            if (isDeclaration(tokens, i, 0)) {
+                let kind = node_1.SymbolKind.Variable;
+                let j = i - 1;
+                while (j >= 0 && tokens[j].type === 'Whitespace')
+                    j--;
+                if (j >= 0 && tokens[j].value === 'function') {
+                    kind = node_1.SymbolKind.Function;
+                }
+                symbols.push({
+                    name: t.value,
+                    kind: kind,
+                    location: node_1.Location.create(uri, {
+                        start: doc.positionAt(t.start),
+                        end: doc.positionAt(t.start + t.length)
+                    })
+                });
+            }
+        }
+    }
+    if (symbols.length > 0) {
+        workspaceSymbolCache.set(uri, symbols);
+    }
+    else {
+        workspaceSymbolCache.delete(uri);
+    }
+}
 async function validateTextDocument(textDocument) {
     await resourcesPromise;
     const settings = await getDocumentSettings(textDocument.uri);
@@ -2101,7 +2232,7 @@ connection.onHover(async (textDocumentPosition) => {
                 if (tagInfo) {
                     const desc = (lang === 'ja' && tagInfo.descriptionJa) ? tagInfo.descriptionJa : tagInfo.description;
                     return {
-                        contents: { kind: 'markdown', value: `**^${tagInfo.name}^**\n\n*Export Tag*\n\n${desc}` },
+                        contents: { kind: 'markdown', value: `**${tagInfo.name}**\n\n*Export Tag*\n\n${desc}` },
                         range: { start: tagStartPos, end: tagEndPos }
                     };
                 }
@@ -2602,6 +2733,36 @@ connection.onDefinition(async (params) => {
                     end: document.positionAt(t.start + t.length)
                 });
             }
+        }
+    }
+    // 3. Fallback to other open documents
+    const processedUris = new Set();
+    processedUris.add(document.uri);
+    for (const doc of documents.all()) {
+        if (doc.uri === document.uri)
+            continue;
+        processedUris.add(doc.uri);
+        const docText = doc.getText();
+        const docTokens = tokenize(docText);
+        for (let i = 0; i < docTokens.length; i++) {
+            const t = docTokens[i];
+            if (t.type === 'Identifier' && t.value === targetName) {
+                if (isDeclaration(docTokens, i, 0)) {
+                    return node_1.Location.create(doc.uri, {
+                        start: doc.positionAt(t.start),
+                        end: doc.positionAt(t.start + t.length)
+                    });
+                }
+            }
+        }
+    }
+    // 4. Fallback to global workspace cache
+    for (const [uri, symbols] of workspaceSymbolCache.entries()) {
+        if (processedUris.has(uri))
+            continue; // Already checked open documents
+        const symbol = symbols.find(s => s.name === targetName);
+        if (symbol) {
+            return symbol.location;
         }
     }
     return null;
