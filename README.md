@@ -31,9 +31,9 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 
 
 ### 4. Definition & References
-- **Go to Definition**: Jump to the definition of user-defined functions, variables, and arguments within the document.
+- **Go to Definition**: Jump to the definition of user-defined functions, variables, and arguments within the document, **as well as across the entire workspace via background scanning**.
 - **Scope Awareness**: Context-sensitive jumping that correctly resolves variables even when multiple functions share the same identifier names.
-- **Workspace Symbols**: Press `Cmd + T` (Mac) or `Ctrl + T` (Windows/Linux) to search for functions and variables across all open documents.
+- **Workspace Symbols**: Press `Cmd + T` (Mac) or `Ctrl + T` (Windows/Linux) to search for functions and variables across all open documents **and the background-scanned workspace**.
 
 ### 5. Advanced Assistance
 - **Signature Help**: Intelligent parameter tracking that correctly counts arguments even through nested parentheses and commas inside strings, highlighting the current parameter you are typing.
@@ -72,6 +72,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 - While the parser now utilizes a robust token-based approach for high-level language features (such as hover and signature help), some structural validation checks may occasionally be tricked by extremely complex or irregular nested structures.
 
 ## Release Notes
+
+### 0.3.3
+- Feature: **Go to Definition** now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.
+- Update: Implemented a robust workspace global cache that updates dynamically on file changes.
 
 ### 0.3.2
 - Fix: Prevented unnecessary addition of double carets (`^^`) in Export Code hover headings.
