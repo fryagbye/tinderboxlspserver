@@ -73,6 +73,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.4
+- Update: CSV抽出と翻訳のプロセスを自動化し、メタデータの表示を改善
+- Update: `tinderboxlspserver`の内部リソースのCSVファイル名を合理化 (`data_types_v2.csv` -> `data_types.csv` 等)
+
 ### 0.3.3
 - Feature: **Go to Definition** now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.
 - Update: Implemented a robust workspace global cache that updates dynamically on file changes.
