@@ -1,6 +1,40 @@
 # Change Log
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
+
+## [0.3.4] - 2026-03-01
+### Updated
+- **Update**: Automated CSV extraction and translation processes, and improved metadata display.
+- **Update**: Streamlined CSV filenames for internal resources (e.g., `data_types_v2.csv` -> `data_types.csv`).
+
+## [0.3.3] - 2026-02-22
+### Added
+- **Feature**: **Go to Definition** now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.
+### Updated
+- **Update**: Implemented a robust workspace global cache that updates dynamically on file changes.
+
+## [0.3.2] - 2026-02-22
+### Fixed
+- **Fix**: Prevented unnecessary addition of double carets (`^^`) in Export Code hover headings.
+- **Fix**: Preserved caret-enclosed phrases (e.g., `^action^`) from being translated during the `export_tags.csv` translation process.
+
+## [0.3.1] - 2026-02-22
+### Fixed
+- **Fix**: Normalized multiple carets (`^^` to `^`) in Export Tags auto-completion and hover documentation.
+### Updated
+- **Update**: Updated internal data types in v2 definition files.
+
+## [0.3.0] - 2026-02-22
+### Added
+- **Feature**: **Workspace Symbols** (`Cmd/Ctrl+T`) support for searching functions and variables across documents.
+- **Feature**: **Code Action** for refactoring: "Extract to variable".
+- **Feature**: **Enhanced Snippets** tailored for Tinderbox (`each`, `if`, etc).
+- **Feature**: **Semantic Tokens Evolution**: Added `readonly` and `defaultLibrary` modifiers for System Attributes, allowing distinct coloring for unmodifiable values.
+### Improved
+- **Improved**: **Signature Help** accuracy massively increased by replacing regex ahead-scanning with tokenizer-based state parsing (respects nested parens and string literals).
+### Fixed
+- **Fix**: Addressed an issue where Hover failed for expressions containing string literals with parentheses or operators. Now uses robust token sequence matching.
+
  
 ## [0.2.2] - 2026-01-04
 ### Added
