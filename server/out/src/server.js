@@ -1239,12 +1239,12 @@ async function loadResources() {
             return rows;
         };
         // --- Load Operators from CSV ---
-        const operatorsPath = path.join(resourcePath, 'extract_operators.csv');
+        const operatorsPath = path.join(resourcePath, 'operators.csv');
         let opCsvContent = '';
         if (fs.existsSync(operatorsPath))
             opCsvContent = await fs.promises.readFile(operatorsPath, 'utf-8');
         else
-            connection.console.warn(`Could not find extract_operators.csv at ${operatorsPath}`);
+            connection.console.warn(`Could not find operators.csv at ${operatorsPath}`);
         if (opCsvContent) {
             const rows = parseCSV(opCsvContent);
             // Migrated logic:
@@ -1459,13 +1459,13 @@ async function loadResources() {
             connection.console.log(`Loaded ${systemAttributes.size} system attributes (async).`);
         }
         // --- Load Data Types ---
-        const typesPath = path.join(resourcePath, 'data_types_v2.csv');
+        const typesPath = path.join(resourcePath, 'data_types.csv');
         let typesContent = '';
         if (fs.existsSync(typesPath)) {
             typesContent = await fs.promises.readFile(typesPath, 'utf-8');
         }
         else {
-            connection.console.warn(`Could not find data_types_v2.csv at ${typesPath}`);
+            connection.console.warn(`Could not find data_types.csv at ${typesPath}`);
         }
         if (typesContent) {
             const rows = parseCSV(typesContent);
