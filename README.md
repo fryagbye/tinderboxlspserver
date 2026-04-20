@@ -73,9 +73,12 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.5
+- Fix: Resolved an issue where slashes (`/`) within string literals or in-line comments were incorrectly identified as operators during formatting, ensuring path-like strings are preserved.
+
 ### 0.3.4
-- Update: CSV抽出と翻訳のプロセスを自動化し、メタデータの表示を改善
-- Update: `tinderboxlspserver`の内部リソースのCSVファイル名を合理化 (`data_types_v2.csv` -> `data_types.csv` 等)
+- Update: Automated the CSV extraction and translation process for improved metadata management.
+- Update: Streamlined internal resource CSV filenames (e.g., `data_types_v2.csv` -> `data_types.csv`).
 
 ### 0.3.3
 - Feature: **Go to Definition** now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.

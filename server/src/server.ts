@@ -337,28 +337,69 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
         // Apply current indentation
         let newLine = indentChar.repeat(currentIndent) + trimmed;
 
-        // Space optimization for operators (simple version)
+        // Space optimization for operators (string-aware version)
         // Ensure space around =, +, -, *, /, ==, !=, <, >, <=, >=
-        // We only apply this if it doesn't look like a comment or a string start
-        if (!trimmed.startsWith('//') && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
-            // This is a very simplified approach.
-            // 1. Handle common operators (except slash)
-            newLine = newLine.replace(/\s*([=+*<>!]=|[=+*<>])\s*/g, ' $1 ');
+        // We skip string literals and comments.
+        if (!trimmed.startsWith('//')) {
+            let parts: { type: 'code' | 'string' | 'comment', text: string }[] = [];
+            let current = '';
+            let inString: string | null = null;
+            
+            for (let j = 0; j < newLine.length; j++) {
+                const char = newLine[j];
+                
+                // Handle in-line comment
+                if (!inString && char === '/' && j + 1 < newLine.length && newLine[j + 1] === '/') {
+                    let codeText = current;
+                    let spacePrefix = '';
+                    const spaceMatch = codeText.match(/\s+$/);
+                    if (spaceMatch) {
+                        spacePrefix = spaceMatch[0];
+                        codeText = codeText.substring(0, codeText.length - spacePrefix.length);
+                    }
+                    if (codeText) parts.push({ type: 'code', text: codeText });
+                    parts.push({ type: 'comment', text: spacePrefix + newLine.substring(j) });
+                    current = '';
+                    break;
+                }
 
-            // 2. Handle slash (/) carefully to avoid reformatting paths like /Templates/Note
-            // We treat it as an operator ONLY if it's surrounded by spaces OR between alphanumeric chars
-            // but NOT if it looks like a path start or is part of a path.
-            // Simple heuristic: if it has a space before OR after, or is between numbers/vars, it's likely an operator.
-            // For now, let's ONLY space it if it ALREADY has a space on at least one side,
-            // or if it's between a closing paren/quote and a word.
-            newLine = newLine.replace(/([a-zA-Z0-9_$)"'])\s*\/\s*([a-zA-Z0-9_$"(])/g, '$1 / $2');
+                if ((char === '"' || char === "'")) {
+                    if (inString === char) {
+                        current += char;
+                        parts.push({ type: 'string', text: current });
+                        current = '';
+                        inString = null;
+                    } else if (!inString) {
+                        if (current) parts.push({ type: 'code', text: current });
+                        current = char;
+                        inString = char;
+                    } else {
+                        current += char;
+                    }
+                } else {
+                    current += char;
+                }
+            }
+            if (current) parts.push({ type: inString ? 'string' : 'code', text: current });
 
-            newLine = newLine
-                .replace(/\s*,\s*/g, ', ') // Space after comma
-                .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
-                .replace(/ {2,}/g, ' '); // Collapse multiple spaces (but keep indent)
+            newLine = parts.map(p => {
+                if (p.type === 'code') {
+                    let s = p.text;
+                    // 1. Handle common operators (except slash)
+                    s = s.replace(/\s*([=+*<>!]=|[=+*<>])\s*/g, ' $1 ');
+                    
+                    // 2. Handle slash (/) carefully
+                    s = s.replace(/([a-zA-Z0-9_$)"'])\s*\/\s*([a-zA-Z0-9_$"(])/g, '$1 / $2');
 
-            // Restore indentation which might have been affected by collapse
+                    s = s.replace(/\s*,\s*/g, ', ') // Space after comma
+                         .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
+                         .replace(/ {2,}/g, ' '); // Collapse multiple spaces
+                    return s;
+                }
+                return p.text;
+            }).join('');
+
+            // Restore indentation which might have been affected
             const indent = indentChar.repeat(currentIndent);
             newLine = indent + newLine.trim();
             trimmed = newLine.trim(); // Update trimmed for subsequent checks
