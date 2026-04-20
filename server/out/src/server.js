@@ -299,10 +299,11 @@ connection.onDocumentFormatting((params) => {
             newLine = parts.map(p => {
                 if (p.type === 'code') {
                     let s = p.text;
-                    // 1. Handle common operators (except slash)
-                    s = s.replace(/\s*([=+*<>!]=|[=+*<>])\s*/g, ' $1 ');
-                    // 2. Handle slash (/) carefully
-                    s = s.replace(/([a-zA-Z0-9_$)"'])\s*\/\s*([a-zA-Z0-9_$"(])/g, '$1 / $2');
+                    // 1. Handle common operators (except slash and hyphen)
+                    s = s.replace(/\s*([=+*<>!&|]=|[=+*<>!&|])\s*/g, ' $1 ');
+                    // 2. Handle slash (/) and hyphen (-) carefully to avoid issues with paths or unary minus
+                    // Heuristic: only space it if it's between alphanumeric/ID chars or closing brackets/quotes.
+                    s = s.replace(/([a-zA-Z0-9_$)"'])\s*([\/\-])\s*([a-zA-Z0-9_$"(])/g, '$1 $2 $3');
                     s = s.replace(/\s*,\s*/g, ', ') // Space after comma
                         .replace(/\s*;\s*$/g, ';') // Remove space before trailing semicolon
                         .replace(/ {2,}/g, ' '); // Collapse multiple spaces

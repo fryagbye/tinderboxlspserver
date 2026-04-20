@@ -73,6 +73,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.6
+- Fix: Prevented automatic space insertion for all operator symbols (e.g., `+`, `-`, `*`, `=`, `&`, `|`) within string literals and in-line comments.
+- Update: Added subtraction (`-`) and logical operators (`&`, `|`) to the formatting rules.
+
 ### 0.3.5
 - Fix: Resolved an issue where slashes (`/`) within string literals or in-line comments were incorrectly identified as operators during formatting, ensuring path-like strings are preserved.
 
