@@ -2,6 +2,10 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.3.7] - 2026-04-25
+### Fixed
+- **Fix**: Export Code の `^if()^`, `^not()^`, `^do()^` タグ内での評価式に対する「Missing semicolon?」警告を抑制しました。
+
 ## [0.3.4] - 2026-03-01
 ### Updated
 - **Update**: Automated CSV extraction and translation processes, and improved metadata display.
