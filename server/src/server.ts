@@ -912,7 +912,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
             // 'include' arguments are handled by recursive tag extraction but not as a full expression.
             if (['value', 'if', 'action', 'do', 'not'].includes(lowerTagName)) {
                 if (tag.contentStart !== -1) {
-                    const suppressSemicolon = lowerTagName === 'value';
+                    const suppressSemicolon = ['value', 'if', 'not', 'do'].includes(lowerTagName);
 
                     // --- MASK NESTED TAGS for parent validation ---
                     // If we are validating ^if(...)^, we should mask any ^value()^ inside it
