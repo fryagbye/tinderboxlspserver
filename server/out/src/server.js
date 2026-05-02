@@ -1669,7 +1669,8 @@ connection.onCompletion(async (textDocumentPosition) => {
                             range: range,
                             newText: insertText
                         },
-                        insertTextFormat: node_1.InsertTextFormat.Snippet
+                        insertTextFormat: node_1.InsertTextFormat.Snippet,
+                        data: { type: 'export_tag', key: tag.name.toLowerCase(), language: lang }
                     };
                 });
             }
@@ -1970,7 +1971,9 @@ connection.onCompletion(async (textDocumentPosition) => {
 connection.onCompletionResolve(async (item) => {
     await resourcesPromise;
     const data = item.data;
-    const lang = data?.language || 'en';
+    if (!data)
+        return item;
+    const lang = data.language || 'en';
     if (data.type === 'operator') {
         const op = tinderboxOperators.get(data.key);
         if (op) {

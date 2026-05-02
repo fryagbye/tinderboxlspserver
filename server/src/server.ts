@@ -1916,7 +1916,8 @@ connection.onCompletion(
                                 range: range,
                                 newText: insertText
                             },
-                            insertTextFormat: InsertTextFormat.Snippet
+                            insertTextFormat: InsertTextFormat.Snippet,
+                            data: { type: 'export_tag', key: tag.name.toLowerCase(), language: lang }
                         };
                     });
                 }
@@ -2247,7 +2248,8 @@ connection.onCompletionResolve(
     async (item: CompletionItem): Promise<CompletionItem> => {
         await resourcesPromise;
         const data = item.data;
-        const lang = data?.language || 'en';
+        if (!data) return item;
+        const lang = data.language || 'en';
 
         if (data.type === 'operator') {
             const op = tinderboxOperators.get(data.key);

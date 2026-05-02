@@ -2,9 +2,29 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.3.9] - 2026-05-02
+### Fixed
+- **Fix**: Finalized the `completionItem/resolve` fix by ensuring `data` property is correctly attached to all completion items.
+### Updated
+- **Update**: Synchronized internal resource CSV files (Operators, System Attributes, Colors, Data Types, and **Designators**) with the latest **aTbRef** update (last updated: Thu, 30 Apr 2026) for improved accuracy and descriptions.
+
+## [0.3.8] - 2026-04-25
+### Fixed
+- **Fix**: Resolved an issue where `completionItem/resolve` requests failed due to missing `data` property.
+
 ## [0.3.7] - 2026-04-25
 ### Fixed
-- **Fix**: Export Code の `^if()^`, `^not()^`, `^do()^` タグ内での評価式に対する「Missing semicolon?」警告を抑制しました。
+- **Fix**: Suppressed "Missing semicolon?" warnings for expressions within `^if()^`, `^not()^`, and `^do()^` tags in Export Code.
+
+## [0.3.6] - 2026-04-20
+### Fixed
+- **Fix**: Implemented string-aware operator spacing to prevent corruption of string literals and comments during formatting.
+### Updated
+- **Update**: Refactored server implementation and build configuration for improved action code handling.
+
+## [0.3.5] - 2026-04-20
+### Fixed
+- **Fix**: Prevented the automatic insertion of spaces around forward slashes (`/`) when they are part of file paths within string literals or comments during document formatting.
 
 ## [0.3.4] - 2026-03-01
 ### Updated

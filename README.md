@@ -73,6 +73,16 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.3.9
+- Fix: Finalized `completionItem/resolve` fix.
+- Update: Synchronized internal resources (Operators, Attributes, **Designators**, etc) with the latest **aTbRef** (Thu, 30 Apr 2026).
+
+### 0.3.8
+- Fix: Resolved an issue where `completionItem/resolve` requests failed due to missing `data` property.
+
+### 0.3.7
+- Fix: Suppressed "Missing semicolon?" warnings for expressions within `^if()^`, `^not()^`, and `^do()^` tags in Export Code.
+
 ### 0.3.6
 - Fix: Prevented automatic space insertion for all operator symbols (e.g., `+`, `-`, `*`, `=`, `&`, `|`) within string literals and in-line comments.
 - Update: Added subtraction (`-`) and logical operators (`&`, `|`) to the formatting rules.
