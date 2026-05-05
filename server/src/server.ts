@@ -53,7 +53,8 @@ import { URI } from 'vscode-uri';
 const connection = createConnection(ProposedFeatures.all);
 
 // Define token types globally for consistency
-const tokenTypes = ['keyword', 'string', 'number', 'comment', 'variable', 'function', 'property', 'method', 'type', 'parameter', 'enumMember'];
+// Define token types globally for consistency
+const tokenTypes = ['keyword', 'string', 'number', 'comment', 'variable', 'function', 'property', 'method', 'type', 'parameter', 'enumMember', 'class', 'interface', 'namespace', 'macro'];
 const tokenModifiers: string[] = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
 const legend = { tokenTypes, tokenModifiers };
 
@@ -2473,60 +2474,65 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 if (prev >= 0 && tokens[prev].value === '.') isFunction = true;
 
                 if (isFunction) {
-                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
+                    // 組み込み型名と同名の関数呼び出し -> method + defaultLibrary
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('method'), (1 << tokenModifiers.indexOf('defaultLibrary')));
                 } else {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('type'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
             } else if (tinderboxDesignators.has(word.toLowerCase())) {
-                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), (1 << tokenModifiers.indexOf('defaultLibrary')));
                 prevTokenWasFunctionKeyword = false;
             } else if (allUserFunctionNames.has(word)) {
-                // ユーザー定義関数の呼び出し
+                // ユーザー定義関数の呼び出し -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
             } else if (word.startsWith('$')) {
                 // 属性のハンドリング
                 if (systemAttributes.has(word)) {
-                    // システム属性 -> variable (修飾子付き)
+                    // システム属性 -> property + defaultLibrary
                     const attr = systemAttributes.get(word);
-                    let modifierMask = 0;
+                    let modifierMask = (1 << tokenModifiers.indexOf('defaultLibrary'));
                     if (attr && attr.readOnly === true) {
                         modifierMask |= (1 << tokenModifiers.indexOf('readonly'));
                     }
-                    modifierMask |= (1 << tokenModifiers.indexOf('defaultLibrary'));
-                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), modifierMask);
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('property'), modifierMask);
                 } else {
-                    // ユーザー属性 -> enumMember (別色にするための割り当て)
+                    // ユーザー属性 -> enumMember
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('enumMember'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
             } else if (currentFunctionParams.has(word) && braceDepth > 0) {
-                // 関数の引数
+                // 関数の引数 -> parameter
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), 0);
                 prevTokenWasFunctionKeyword = false;
             } else if (keywordNames.has(word)) {
-                // 組み込み関数 / 演算子
-                let typeIdx = tokenTypes.indexOf('function');
+                // 組み込み関数 / 演算子 -> method + defaultLibrary
+                let typeIdx = tokenTypes.indexOf('method');
+                let modifierMask = (1 << tokenModifiers.indexOf('defaultLibrary'));
                 const op = tinderboxOperators.get(word);
                 if (op) {
-                    if (op.kind === CompletionItemKind.Variable) typeIdx = tokenTypes.indexOf('variable');
+                    if (op.kind === CompletionItemKind.Variable) typeIdx = tokenTypes.indexOf('property');
                     else if (op.kind === CompletionItemKind.Property) typeIdx = tokenTypes.indexOf('property');
                     else if (op.kind === CompletionItemKind.Method) typeIdx = tokenTypes.indexOf('method');
-                    else if (['if', 'else', 'while', 'return'].includes(op.name)) typeIdx = tokenTypes.indexOf('keyword');
+                    else if (['if', 'else', 'while', 'return'].includes(op.name)) {
+                        typeIdx = tokenTypes.indexOf('keyword');
+                        modifierMask = 0;
+                    }
                 } else if (operatorFamilies.has(word)) {
-                    typeIdx = tokenTypes.indexOf('variable');
+                    typeIdx = tokenTypes.indexOf('property');
                 }
-                builder.push(startPos.line, startPos.character, token.length, typeIdx, 0);
+                builder.push(startPos.line, startPos.character, token.length, typeIdx, modifierMask);
                 prevTokenWasFunctionKeyword = false;
             } else {
                 // ドット演算子としての使用かチェック (例: vList.collect_if)
                 let prev = i - 1;
                 while (prev >= 0 && tokens[prev].type === 'Whitespace') prev--;
                 if (prev >= 0 && tokens[prev].value === '.') {
-                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
+                    // 未知のドット演算子も method として扱う
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('method'), 0);
                 } else {
-                    // 一般的な識別子（ローカル変数など）
+                    // 一般的な識別子（ローカル変数など） -> variable
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
