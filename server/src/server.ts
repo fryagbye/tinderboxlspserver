@@ -2414,6 +2414,7 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     let prevTokenWasFunctionKeyword = false;
     const isExportCode = doc.languageId === 'tinderbox-export-code';
     let insideExportTag = false;
+    let justStartedExportTag = false;
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -2435,9 +2436,15 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             if (isExportCode && !insideExportTag) {
                 // エクスポートタグの外側では基本ハイライトしない
                 prevTokenWasFunctionKeyword = false;
+            } else if (isExportCode && justStartedExportTag && !word.startsWith('$')) {
+                // エクスポートタグの直後の単語（例: ^value(...)^ の value） -> method
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('method'), (1 << tokenModifiers.indexOf('defaultLibrary')));
+                justStartedExportTag = false;
+                prevTokenWasFunctionKeyword = false;
             } else if (word === 'function') {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = true;
+                justStartedExportTag = false;
                 
                 // 新しい関数の解析前にパラメータキャッシュをクリア
                 currentFunctionParams.clear();
@@ -2463,9 +2470,11 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 // 関数定義名 -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (controlKeywords.has(word) || booleanKeywords.has(word)) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (tinderboxDataTypes.has(word.toLowerCase())) {
                 // date() などの関数呼び出し、またはドット演算子（.date）としての使用かチェック
                 let isFunction = false;
@@ -2484,13 +2493,16 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('type'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (tinderboxDesignators.has(word.toLowerCase())) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), (1 << tokenModifiers.indexOf('defaultLibrary')));
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (allUserFunctionNames.has(word)) {
                 // ユーザー定義関数の呼び出し -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (currentFunctionParams.has(word)) {
                 // 関数の引数 -> parameter
                 // 定義箇所（braceDepth == 0 の場合）か使用箇所（braceDepth > 0 の場合）かを判別
@@ -2500,6 +2512,7 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 }
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), modifierMask);
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (word.startsWith('$')) {
                 // 属性のハンドリング
                 if (systemAttributes.has(word)) {
@@ -2515,6 +2528,7 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('enumMember'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else if (keywordNames.has(word)) {
                 // 組み込み関数 / 演算子 -> method + defaultLibrary
                 let typeIdx = tokenTypes.indexOf('method');
@@ -2533,6 +2547,7 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 }
                 builder.push(startPos.line, startPos.character, token.length, typeIdx, modifierMask);
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             } else {
                 // ドット演算子としての使用かチェック (例: vList.collect_if)
                 let prev = i - 1;
@@ -2545,6 +2560,7 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
+                justStartedExportTag = false;
             }
         } else if (token.value === '{') {
             braceDepth++;
@@ -2559,9 +2575,11 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             if (isExportCode) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('macro'), 0);
                 insideExportTag = !insideExportTag;
+                justStartedExportTag = insideExportTag;
             }
             prevTokenWasFunctionKeyword = false;
         } else {
+            justStartedExportTag = false;
             prevTokenWasFunctionKeyword = false;
         }
     }
