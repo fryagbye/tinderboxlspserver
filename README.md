@@ -61,6 +61,24 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 | `tinderboxActionCodeServer.maxNumberOfProblems` | Maximum number of problems reported. | `1000` |
 | `tinderboxActionCodeServer.language` | Language for descriptions (`en` or `ja`). | `en` |
 
+## Customizing Colors
+
+While the extension provides default color mappings that adapt to your theme, you can manually override specific colors in your `settings.json` for even finer control. This is particularly useful if you want to distinguish between system and user attributes or built-in and user functions more clearly:
+
+```json
+"editor.semanticTokenColorCustomizations": {
+    "enabled": true,
+    "rules": {
+        "method:tinderbox-action-code": "#FFCC00",   // Built-in functions (e.g. Yellow)
+        "function:tinderbox-action-code": "#4EC9B0", // User-defined functions (e.g. Turquoise)
+        "property:tinderbox-action-code": "#9CDCFE", // System attributes (e.g. Light Blue)
+        "enumMember:tinderbox-action-code": "#B5CEA8", // User-defined attributes (e.g. Light Green)
+        "parameter:tinderbox-action-code": "#D4D4D4", // Function arguments
+        "variable:tinderbox-action-code": "#D4D4D4"    // Local variables
+    }
+}
+```
+
 ## Usage
 The extension automatically recognizes the following file types:
 - **`.tbxa`**: Tinderbox Action Code files.
