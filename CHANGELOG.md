@@ -4,7 +4,7 @@ All notable changes to the "tinderbox-action-code-lsp" extension will be documen
 
 ## [0.4.0] - 2026-05-05
 ### Added
-- **Feature**: **User-Defined Function Documentation**: Preceding comments (both line `//` and JSDoc `/** ... */`) are now automatically extracted and displayed as documentation in hover and completion suggestions.
+- **Feature**: **User-Defined Function Documentation**: Preceding line comments (`//`) and included JSDoc tags are now automatically extracted and displayed as documentation in hover and completion suggestions.
 - **Feature**: **Improved Semantic Highlighting**: User-defined functions are now correctly color-coded across the entire workspace.
 - **Feature**: **Workspace-wide User Function Support**: Completion and highlighting now recognize user functions defined in any file within the workspace.
 

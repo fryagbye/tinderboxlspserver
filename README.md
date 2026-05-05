@@ -79,7 +79,7 @@ If you are working with other file types (like `.txt`), you can manually set the
 ## Release Notes
 
 ### 0.4.0
-- **Feature**: **User-Defined Function Documentation**: Preceding comments (both line `//` and JSDoc tags) are now automatically extracted and displayed as documentation in hover and completion suggestions.
+- **Feature**: **User-Defined Function Documentation**: Preceding line comments (`//`) and included JSDoc tags are now automatically extracted and displayed as documentation in hover and completion suggestions.
 - **Feature**: **Workspace-wide User Function Support**: Completion and highlighting now recognize user functions defined in any file within the workspace.
 
 ### 0.3.9
