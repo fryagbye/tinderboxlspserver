@@ -5,7 +5,7 @@
   "author": "fryagbye",
   "icon": "icon.png",
   "license": "MIT",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "publisher": "fryagbye",
   "repository": {
     "type": "git",
@@ -43,6 +43,40 @@
           ".tbxe"
         ],
         "configuration": "./client/language-configuration.json"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "tinderbox-action-code",
+        "scopes": {
+          "method": ["entity.name.function.member"],
+          "function": ["entity.name.function"],
+          "property": ["variable.other.property"],
+          "parameter": ["variable.parameter"],
+          "variable": ["variable.other.readwrite"],
+          "enumMember": ["variable.other.enummember"],
+          "type": ["entity.name.type"],
+          "keyword": ["keyword.control"],
+          "number": ["constant.numeric"],
+          "string": ["string.quoted.double"],
+          "comment": ["comment.line.double-slash"]
+        }
+      },
+      {
+        "language": "tinderbox-export-code",
+        "scopes": {
+          "method": ["entity.name.function.member"],
+          "function": ["entity.name.function"],
+          "property": ["variable.other.property"],
+          "parameter": ["variable.parameter"],
+          "variable": ["variable.other.readwrite"],
+          "enumMember": ["variable.other.enummember"],
+          "type": ["entity.name.type"],
+          "keyword": ["keyword.control"],
+          "number": ["constant.numeric"],
+          "string": ["string.quoted.double"],
+          "comment": ["comment.line.double-slash"]
+        }
       }
     ],
     "configuration": {

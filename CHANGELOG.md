@@ -2,6 +2,16 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.3] - 2026-05-05
+### Added
+- Integrated default semantic token color scopes into the extension package for automatic dark/light theme support.
+### Changed
+- Refined semantic token assignments to provide better color differentiation:
+    - Built-in operators are now mapped to `method` + `defaultLibrary`.
+    - System attributes are now mapped to `property` + `defaultLibrary`.
+    - User functions use `function`, while local variables use `variable`.
+    - User attributes use `enumMember`.
+
 ## [0.4.2] - 2026-05-05
 ### Added
 - **Feature**: **Enhanced Semantic Highlighting**: The syntax highlighting engine has been refactored to use a robust token-based parsing approach, providing much more accurate and detailed color-coding.

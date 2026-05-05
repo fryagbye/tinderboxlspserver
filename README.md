@@ -78,6 +78,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.4.3
+- **Feature**: **Automatic Theme Color Support**: Integrated default semantic token scopes into the package to automatically adjust colors for dark and light themes.
+- **Improvement**: Refined token assignments for built-in functions (`method`), system attributes (`property`), and user functions (`function`) to maximize color variety.
+
 ### 0.4.2
 - **Feature**: **Enhanced Semantic Highlighting**: refactored the highlighting engine to provide more accurate color-coding for built-in functions, numbers, parameters, and attributes.
 - **Improvement**: Improved built-in function recognition (e.g., `collect_if`, `update`, `create`, `delete`).
