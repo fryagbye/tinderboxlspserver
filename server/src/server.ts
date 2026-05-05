@@ -2487,6 +2487,15 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 // ユーザー定義関数の呼び出し -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
+            } else if (currentFunctionParams.has(word)) {
+                // 関数の引数 -> parameter
+                // 定義箇所（braceDepth == 0 の場合）か使用箇所（braceDepth > 0 の場合）かを判別
+                let modifierMask = 0;
+                if (braceDepth === 0) {
+                    modifierMask |= (1 << tokenModifiers.indexOf('declaration'));
+                }
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), modifierMask);
+                prevTokenWasFunctionKeyword = false;
             } else if (word.startsWith('$')) {
                 // 属性のハンドリング
                 if (systemAttributes.has(word)) {
@@ -2501,10 +2510,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     // ユーザー属性 -> enumMember
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('enumMember'), 0);
                 }
-                prevTokenWasFunctionKeyword = false;
-            } else if (currentFunctionParams.has(word) && braceDepth > 0) {
-                // 関数の引数 -> parameter
-                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), 0);
                 prevTokenWasFunctionKeyword = false;
             } else if (keywordNames.has(word)) {
                 // 組み込み関数 / 演算子 -> method + defaultLibrary
