@@ -75,7 +75,8 @@
           "keyword": ["keyword.control"],
           "number": ["constant.numeric"],
           "string": ["string.quoted.double"],
-          "comment": ["comment.line.double-slash"]
+          "comment": ["comment.line.double-slash"],
+          "macro": ["keyword.control.macro"]
         }
       }
     ],

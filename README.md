@@ -69,18 +69,19 @@ While the extension provides default color mappings that adapt to your theme, yo
 "editor.semanticTokenColorCustomizations": {
     "enabled": true,
     "rules": {
-        "method:tinderbox-action-code": "#FFCC00",
-        "method:tinderbox-export-code": "#FFCC00",
-        "function:tinderbox-action-code": "#4EC9B0",
-        "function:tinderbox-export-code": "#4EC9B0",
-        "property:tinderbox-action-code": "#95e673ff",
-        "property:tinderbox-export-code": "#95e673ff",
-        "enumMember:tinderbox-action-code": "#3e88d8ff",
-        "enumMember:tinderbox-export-code": "#3e88d8ff",
-        "parameter:tinderbox-action-code": "#c84444ff",
-        "parameter:tinderbox-export-code": "#c84444ff",
-        "variable:tinderbox-action-code": "#ceafe4ff",
-        "variable:tinderbox-export-code": "#ceafe4ff"
+      "method:tinderbox-action-code": "#004cff",
+      "method:tinderbox-export-code": "#004cff",
+      "function:tinderbox-action-code": "#4EC9B0",
+      "function:tinderbox-export-code": "#4EC9B0",
+      "property:tinderbox-action-code": "#7841e7",
+      "property:tinderbox-export-code": "#7841e7",
+      "enumMember:tinderbox-action-code": "#3e88d8ff",
+      "enumMember:tinderbox-export-code": "#3e88d8ff",
+      "parameter:tinderbox-action-code": "#c84444ff",
+      "parameter:tinderbox-export-code": "#c84444ff",
+      "variable:tinderbox-action-code": "#ffffffd0",
+      "variable:tinderbox-export-code": "#ffffffd0",
+      "macro:tinderbox-export-code": "#ff00ff"    // Export Tag caret (^)
     }
 }
 ```

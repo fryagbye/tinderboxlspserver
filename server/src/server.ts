@@ -2412,6 +2412,8 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     let braceDepth = 0;
     let currentFunctionParams = new Set<string>();
     let prevTokenWasFunctionKeyword = false;
+    const isExportCode = doc.languageId === 'tinderbox-export-code';
+    let insideExportTag = false;
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -2430,8 +2432,10 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             prevTokenWasFunctionKeyword = false;
         } else if (token.type === 'Keyword' || token.type === 'Identifier') {
             const word = token.value;
-            
-            if (word === 'function') {
+            if (isExportCode && !insideExportTag) {
+                // エクスポートタグの外側では基本ハイライトしない
+                prevTokenWasFunctionKeyword = false;
+            } else if (word === 'function') {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = true;
                 
@@ -2549,6 +2553,12 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             braceDepth--;
             if (braceDepth === 0) {
                 currentFunctionParams.clear();
+            }
+            prevTokenWasFunctionKeyword = false;
+        } else if (token.value === '^') {
+            if (isExportCode) {
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('macro'), 0);
+                insideExportTag = !insideExportTag;
             }
             prevTokenWasFunctionKeyword = false;
         } else {
