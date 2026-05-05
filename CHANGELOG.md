@@ -2,6 +2,11 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.1] - 2026-05-05
+### Fixed
+- **Fix**: Removed incorrect references to block comments (`/* ... */`) in documentation as they are not supported in Tinderbox.
+- **Improved**: Refined JSDoc tag parsing within line comments.
+
 ## [0.4.0] - 2026-05-05
 ### Added
 - **Feature**: **User-Defined Function Documentation**: Preceding line comments (`//`) and included JSDoc tags are now automatically extracted and displayed as documentation in hover and completion suggestions.
