@@ -78,6 +78,15 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.4.2
+- **Feature**: **Enhanced Semantic Highlighting**: refactored the highlighting engine to provide more accurate color-coding for built-in functions, numbers, parameters, and attributes.
+- **Improvement**: Improved built-in function recognition (e.g., `collect_if`, `update`, `create`, `delete`).
+- **Improvement**: Added numerical literal highlighting.
+- **Improvement**: Added context-aware highlighting for type names vs. function calls (e.g., `date()` vs. `date`).
+- **Improvement**: Distinct coloring for System vs. User attributes.
+- **Improvement**: Function arguments are now distinctly colored from local variables.
+- **Improvement**: Identifiers preceded by a dot (chained operators) are now consistently highlighted as functions.
+
 ### 0.4.1
 - **Fix**: Removed block comment references in documentation and refined line-comment JSDoc tag support.
 

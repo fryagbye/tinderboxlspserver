@@ -1383,6 +1383,24 @@ async function loadResources() {
                         op.kind = node_1.CompletionItemKind.Keyword;
                     }
                     tinderboxOperators.set(label, op);
+                    // セマンティック・ハイライトやホバー表示のために、引数を除いたベース名でも登録を行う
+                    // "func(args)" や "Type.func(args)" の形式から名前部分を抽出
+                    const baseNameMatch = label.match(/^([a-zA-Z0-9_.]+)/);
+                    if (baseNameMatch) {
+                        const baseName = baseNameMatch[1];
+                        if (!tinderboxOperators.has(baseName)) {
+                            tinderboxOperators.set(baseName, op);
+                        }
+                        keywordNames.add(baseName); // ハイライト対象に追加
+                        // ドット演算子 (例: List.each) の場合、末尾の単語 (each) もハイライト対象にする
+                        if (baseName.includes('.')) {
+                            const parts = baseName.split('.');
+                            const suffix = parts[parts.length - 1];
+                            if (suffix) {
+                                keywordNames.add(suffix);
+                            }
+                        }
+                    }
                     const lowerName = label.toLowerCase();
                     // Populate typeMethods based on Prefix or OpScope
                     if (isDotOp || lowerName.startsWith('json.') || lowerName.startsWith('xml.')) {
@@ -2106,6 +2124,7 @@ connection.languages.semanticTokens.on((params) => {
         return { data: [] };
     const text = doc.getText();
     const builder = new node_1.SemanticTokensBuilder();
+    const tokens = tokenize(text);
     // 1. Reserved Words (Control Flow)
     const controlKeywords = new Set([
         'var', 'if', 'else', 'while', 'do', 'return', 'each', 'to', 'in', 'end'
@@ -2114,116 +2133,163 @@ connection.languages.semanticTokens.on((params) => {
     const booleanKeywords = new Set([
         'true', 'false'
     ]);
-    // 4. Use User Functions from cache (pre-calculated for performance)
-    const userFunctionNames = allUserFunctionNames;
-    // Regex: Group 1 = Comment, Group 2 = String, Group 3 = Identifier
-    const pattern = /(\/\/.*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|([$a-zA-Z0-9_.]+)/g;
-    let match;
+    let braceDepth = 0;
+    let currentFunctionParams = new Set();
     let prevTokenWasFunctionKeyword = false;
-    while ((match = pattern.exec(text))) {
-        const startPos = doc.positionAt(match.index);
-        const length = match[0].length;
-        if (match[1]) {
-            // Comment
-            builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('comment'), 0);
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        const startPos = doc.positionAt(token.start);
+        if (token.type === 'Whitespace')
+            continue;
+        if (token.type === 'Comment') {
+            builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('comment'), 0);
             prevTokenWasFunctionKeyword = false;
         }
-        else if (match[2]) {
-            // String
-            builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('string'), 0);
+        else if (token.type === 'String') {
+            builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('string'), 0);
             prevTokenWasFunctionKeyword = false;
         }
-        else if (match[3]) {
-            // Identifier
-            const word = match[3];
+        else if (token.type === 'Number') {
+            builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('number'), 0);
+            prevTokenWasFunctionKeyword = false;
+        }
+        else if (token.type === 'Keyword' || token.type === 'Identifier') {
+            const word = token.value;
             if (word === 'function') {
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = true;
+                // 新しい関数の解析前にパラメータキャッシュをクリア
+                currentFunctionParams.clear();
+                // 引数を抽出してスコープ管理に使用する
+                let k = i + 1;
+                while (k < tokens.length && tokens[k].type === 'Whitespace')
+                    k++;
+                // 関数名のスキップ
+                if (k < tokens.length && (tokens[k].type === 'Identifier' || tokens[k].type === 'Keyword')) {
+                    k++;
+                    while (k < tokens.length && tokens[k].type === 'Whitespace')
+                        k++;
+                    if (k < tokens.length && tokens[k].value === '(') {
+                        k++;
+                        while (k < tokens.length && tokens[k].value !== ')') {
+                            if (tokens[k].type === 'Identifier') {
+                                currentFunctionParams.add(tokens[k].value);
+                            }
+                            k++;
+                        }
+                    }
+                }
             }
             else if (prevTokenWasFunctionKeyword) {
-                // Function definition name -> function
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('function'), 0);
+                // 関数定義名 -> function
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
             }
-            else if (controlKeywords.has(word)) {
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
-                prevTokenWasFunctionKeyword = false;
-            }
-            else if (booleanKeywords.has(word)) {
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
+            else if (controlKeywords.has(word) || booleanKeywords.has(word)) {
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
             }
             else if (tinderboxDataTypes.has(word.toLowerCase())) {
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('type'), 0);
+                // date() などの関数呼び出し、またはドット演算子（.date）としての使用かチェック
+                let isFunction = false;
+                let next = i + 1;
+                while (next < tokens.length && tokens[next].type === 'Whitespace')
+                    next++;
+                if (next < tokens.length && tokens[next].value === '(')
+                    isFunction = true;
+                let prev = i - 1;
+                while (prev >= 0 && tokens[prev].type === 'Whitespace')
+                    prev--;
+                if (prev >= 0 && tokens[prev].value === '.')
+                    isFunction = true;
+                if (isFunction) {
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
+                }
+                else {
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('type'), 0);
+                }
                 prevTokenWasFunctionKeyword = false;
             }
             else if (tinderboxDesignators.has(word.toLowerCase())) {
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('keyword'), 0);
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
             }
-            else if (userFunctionNames.has(word)) {
-                // User Function Call -> function
-                builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('function'), 0);
+            else if (allUserFunctionNames.has(word)) {
+                // ユーザー定義関数の呼び出し
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
             }
             else if (word.startsWith('$')) {
-                // Attribute handling
+                // 属性のハンドリング
                 if (systemAttributes.has(word)) {
-                    // System Attribute -> variable
+                    // システム属性 -> variable (修飾子付き)
                     const attr = systemAttributes.get(word);
                     let modifierMask = 0;
                     if (attr && attr.readOnly === true) {
                         modifierMask |= (1 << tokenModifiers.indexOf('readonly'));
                     }
                     modifierMask |= (1 << tokenModifiers.indexOf('defaultLibrary'));
-                    builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('variable'), modifierMask);
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), modifierMask);
                 }
                 else {
-                    // User Attribute -> enumMember (distinct color)
-                    builder.push(startPos.line, startPos.character, length, tokenTypes.indexOf('enumMember'), 0);
+                    // ユーザー属性 -> enumMember (別色にするための割り当て)
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('enumMember'), 0);
                 }
+                prevTokenWasFunctionKeyword = false;
+            }
+            else if (currentFunctionParams.has(word) && braceDepth > 0) {
+                // 関数の引数
+                builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), 0);
                 prevTokenWasFunctionKeyword = false;
             }
             else if (keywordNames.has(word)) {
+                // 組み込み関数 / 演算子
                 let typeIdx = tokenTypes.indexOf('function');
-                if (systemAttributes.has(word)) {
+                const op = tinderboxOperators.get(word);
+                if (op) {
+                    if (op.kind === node_1.CompletionItemKind.Variable)
+                        typeIdx = tokenTypes.indexOf('variable');
+                    else if (op.kind === node_1.CompletionItemKind.Property)
+                        typeIdx = tokenTypes.indexOf('property');
+                    else if (op.kind === node_1.CompletionItemKind.Method)
+                        typeIdx = tokenTypes.indexOf('method');
+                    else if (['if', 'else', 'while', 'return'].includes(op.name))
+                        typeIdx = tokenTypes.indexOf('keyword');
+                }
+                else if (operatorFamilies.has(word)) {
                     typeIdx = tokenTypes.indexOf('variable');
                 }
-                else {
-                    const op = tinderboxOperators.get(word);
-                    if (op) {
-                        if (op.kind === node_1.CompletionItemKind.Variable)
-                            typeIdx = tokenTypes.indexOf('variable');
-                        else if (op.kind === node_1.CompletionItemKind.Property)
-                            typeIdx = tokenTypes.indexOf('property');
-                        else if (op.kind === node_1.CompletionItemKind.Method)
-                            typeIdx = tokenTypes.indexOf('method');
-                        else if (['if', 'else', 'while', 'return'].includes(op.name))
-                            typeIdx = tokenTypes.indexOf('keyword');
-                    }
-                    else if (operatorFamilies.has(word)) {
-                        typeIdx = tokenTypes.indexOf('variable');
-                    }
-                }
-                builder.push(startPos.line, startPos.character, length, typeIdx, 0);
-            }
-            else if (word.includes('.') && !word.startsWith('$')) {
-                // Check for Dot Operators (suffix match)
-                // e.g. vStr.show  -> "show"
-                const lastDot = word.lastIndexOf('.');
-                if (lastDot >= 0 && lastDot < word.length - 1) {
-                    const suffix = word.substring(lastDot + 1);
-                    if (dotOperatorsMap.has(suffix)) {
-                        // Highlight the suffix as a function/method
-                        // Suffix start relative to token start: lastDot + 1
-                        builder.push(startPos.line, startPos.character + lastDot + 1, suffix.length, tokenTypes.indexOf('function'), 0);
-                    }
-                }
+                builder.push(startPos.line, startPos.character, token.length, typeIdx, 0);
                 prevTokenWasFunctionKeyword = false;
             }
             else {
+                // ドット演算子としての使用かチェック (例: vList.collect_if)
+                let prev = i - 1;
+                while (prev >= 0 && tokens[prev].type === 'Whitespace')
+                    prev--;
+                if (prev >= 0 && tokens[prev].value === '.') {
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
+                }
+                else {
+                    // 一般的な識別子（ローカル変数など）
+                    builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), 0);
+                }
                 prevTokenWasFunctionKeyword = false;
             }
+        }
+        else if (token.value === '{') {
+            braceDepth++;
+            prevTokenWasFunctionKeyword = false;
+        }
+        else if (token.value === '}') {
+            braceDepth--;
+            if (braceDepth === 0) {
+                currentFunctionParams.clear();
+            }
+            prevTokenWasFunctionKeyword = false;
+        }
+        else {
+            prevTokenWasFunctionKeyword = false;
         }
     }
     return builder.build();

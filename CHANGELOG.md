@@ -2,6 +2,16 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.2] - 2026-05-05
+### Added
+- **Feature**: **Enhanced Semantic Highlighting**: The syntax highlighting engine has been refactored to use a robust token-based parsing approach, providing much more accurate and detailed color-coding.
+- **Feature**: **Numerical Literal Highlighting**: Added specific token types for numbers (e.g., `123`, `4.5`), ensuring they are colored distinctly from other identifiers.
+- **Feature**: **Improved Built-in Function Recognition**: Operators like `collect_if`, `update`, `create`, and `delete` are now correctly identified and highlighted as functions.
+- **Feature**: **Context-Aware Type vs. Function Highlighting**: Correctly distinguishes between type names and functions sharing the same name (e.g., `date()` as a function vs. `date` as a data type) based on surrounding syntax.
+- **Feature**: **Attribute Differentiation**: System attributes (e.g., `$Name`) and user-defined attributes (e.g., `$MyUserAttr`) are now assigned different token types (`variable` with `defaultLibrary` modifier vs. `enumMember`), allowing for distinct coloring in compatible themes.
+- **Feature**: **Parameter Identification**: Function arguments are now identified as `parameter` tokens, distinguishing them from local variables within the function scope.
+- **Feature**: **Dot Operator Support**: Identifiers preceded by a dot (chained operators like `.size` or `.collect_if`) are now consistently highlighted as functions.
+
 ## [0.4.1] - 2026-05-05
 ### Fixed
 - **Fix**: Removed incorrect references to block comments (`/* ... */`) in documentation as they are not supported in Tinderbox.
