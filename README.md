@@ -70,7 +70,7 @@ While the extension provides default color mappings that adapt to your theme, yo
     "enabled": true,
     "rules": {
       "method:tinderbox-action-code": "#004cff",
-      "method:tinderbox-export-code": "#004cff",
+      "method:tinderbox-export-code": "#ff00ff",
       "function:tinderbox-action-code": "#4EC9B0",
       "function:tinderbox-export-code": "#4EC9B0",
       "property:tinderbox-action-code": "#7841e7",
