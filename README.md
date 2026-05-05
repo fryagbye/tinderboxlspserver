@@ -69,12 +69,18 @@ While the extension provides default color mappings that adapt to your theme, yo
 "editor.semanticTokenColorCustomizations": {
     "enabled": true,
     "rules": {
-        "method:tinderbox-action-code": "#FFCC00",   // Built-in functions (e.g. Yellow)
-        "function:tinderbox-action-code": "#4EC9B0", // User-defined functions (e.g. Turquoise)
-        "property:tinderbox-action-code": "#9CDCFE", // System attributes (e.g. Light Blue)
-        "enumMember:tinderbox-action-code": "#B5CEA8", // User-defined attributes (e.g. Light Green)
-        "parameter:tinderbox-action-code": "#D4D4D4", // Function arguments
-        "variable:tinderbox-action-code": "#D4D4D4"    // Local variables
+        "method:tinderbox-action-code": "#FFCC00",
+        "method:tinderbox-export-code": "#FFCC00",
+        "function:tinderbox-action-code": "#4EC9B0",
+        "function:tinderbox-export-code": "#4EC9B0",
+        "property:tinderbox-action-code": "#95e673ff",
+        "property:tinderbox-export-code": "#95e673ff",
+        "enumMember:tinderbox-action-code": "#3e88d8ff",
+        "enumMember:tinderbox-export-code": "#3e88d8ff",
+        "parameter:tinderbox-action-code": "#c84444ff",
+        "parameter:tinderbox-export-code": "#c84444ff",
+        "variable:tinderbox-action-code": "#ceafe4ff",
+        "variable:tinderbox-export-code": "#ceafe4ff"
     }
 }
 ```
