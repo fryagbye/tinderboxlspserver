@@ -49,6 +49,11 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 ### 7. Token-Based Parsing Engine
 - **Robust State Tracking**: The core parser has been upgraded from simple regex scanning to a robust, token-based state machine. This change significantly improves the accuracy of context-aware features such as signature help, hover information, and variable scoping—especially when dealing with complex nested structures, parentheses, and method chains.
 
+### 8. User-Defined Function Documentation
+- **Automatic Extraction**: Automatically extracts preceding line comments (`//`) as function documentation.
+- **Tag Support**: Supports JSDoc-style block tags (`@param`, `@return`, etc.) and inline tags (`{@link}`) within line comments.
+- **Workspace-wide Scope**: Recognizes and documents user functions defined in any file across the entire workspace.
+
 ## Configuration
 
 | Setting | Description | Default |
@@ -72,6 +77,10 @@ If you are working with other file types (like `.txt`), you can manually set the
 - While the parser now utilizes a robust token-based approach for high-level language features (such as hover and signature help), some structural validation checks may occasionally be tricked by extremely complex or irregular nested structures.
 
 ## Release Notes
+
+### 0.4.0
+- **Feature**: **User-Defined Function Documentation**: Preceding comments (both line `//` and JSDoc tags) are now automatically extracted and displayed as documentation in hover and completion suggestions.
+- **Feature**: **Workspace-wide User Function Support**: Completion and highlighting now recognize user functions defined in any file within the workspace.
 
 ### 0.3.9
 - Fix: Finalized `completionItem/resolve` fix.

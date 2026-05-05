@@ -13,6 +13,7 @@ const tokenTypes = ['keyword', 'string', 'number', 'comment', 'variable', 'funct
 const tokenModifiers = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
 const legend = { tokenTypes, tokenModifiers };
 const workspaceSymbolCache = new Map(); // Key: file URI
+const allUserFunctionNames = new Set();
 process.on('uncaughtException', (err) => {
     connection.console.error(`Uncaught Exception: ${err?.message || err}`);
 });
@@ -141,44 +142,122 @@ async function indexFileForCache(filePath) {
     try {
         const text = await fs.promises.readFile(filePath, 'utf-8');
         const uri = vscode_uri_1.URI.file(filePath).toString();
-        const tokens = tokenize(text);
-        const symbols = [];
-        for (let i = 0; i < tokens.length; i++) {
-            const t = tokens[i];
-            // Look for functions and variables
-            if (t.type === 'Identifier') {
-                if (isDeclaration(tokens, i, 0)) {
-                    // Create a dummy document just enough for positionAt
-                    // Using TextDocument.create is safe for this as we only need it for offset conversion
-                    const doc = vscode_languageserver_textdocument_1.TextDocument.create(uri, 'tinderbox-action-code', 1, text);
-                    let kind = node_1.SymbolKind.Variable;
-                    // basic heuristic: if 'function' was behind it
-                    let j = i - 1;
-                    while (j >= 0 && tokens[j].type === 'Whitespace')
-                        j--;
-                    if (j >= 0 && tokens[j].value === 'function') {
-                        kind = node_1.SymbolKind.Function;
-                    }
-                    symbols.push({
-                        name: t.value,
-                        kind: kind,
-                        location: node_1.Location.create(uri, {
-                            start: doc.positionAt(t.start),
-                            end: doc.positionAt(t.start + t.length)
-                        })
-                    });
-                }
-            }
-        }
+        const doc = vscode_languageserver_textdocument_1.TextDocument.create(uri, 'tinderbox-action-code', 1, text);
+        const symbols = extractSymbolsFromText(text, uri, doc);
         if (symbols.length > 0) {
             workspaceSymbolCache.set(uri, symbols);
         }
         else {
-            workspaceSymbolCache.delete(uri); // clear if it has none
+            workspaceSymbolCache.delete(uri);
         }
+        rebuildUserFunctionNameCache();
     }
     catch (err) {
         connection.console.warn(`Error indexing file ${filePath}: ${err}`);
+    }
+}
+function extractSymbolsFromText(text, uri, doc) {
+    const tokens = tokenize(text);
+    const symbols = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type === 'Identifier') {
+            if (isDeclaration(tokens, i, 0)) {
+                let kind = node_1.SymbolKind.Variable;
+                let description;
+                let signature;
+                let j = i - 1;
+                while (j >= 0 && tokens[j].type === 'Whitespace')
+                    j--;
+                if (j >= 0 && tokens[j].value === 'function') {
+                    kind = node_1.SymbolKind.Function;
+                    // Extract signature
+                    let k = i;
+                    let parenDepth = 0;
+                    let signatureValue = '';
+                    while (k < tokens.length) {
+                        const token = tokens[k];
+                        if (!token)
+                            break;
+                        signatureValue += token.value;
+                        if (token.value === '(')
+                            parenDepth++;
+                        else if (token.value === ')') {
+                            parenDepth--;
+                            if (parenDepth === 0)
+                                break;
+                        }
+                        k++;
+                    }
+                    signature = signatureValue;
+                    description = extractPrecedingComments(tokens, i);
+                }
+                symbols.push({
+                    name: t.value,
+                    kind: kind,
+                    location: node_1.Location.create(uri, {
+                        start: doc.positionAt(t.start),
+                        end: doc.positionAt(t.start + t.length)
+                    }),
+                    description,
+                    signature
+                });
+            }
+        }
+    }
+    return symbols;
+}
+function extractPrecedingComments(tokens, identifierIndex) {
+    // identifierIndex is the index of the function name
+    // The keyword 'function' should be just before it (skipping whitespace)
+    let j = identifierIndex - 1;
+    while (j >= 0 && tokens[j].type === 'Whitespace')
+        j--;
+    if (j < 0 || tokens[j].value !== 'function')
+        return '';
+    // Scan backwards from 'function' keyword
+    let k = j - 1;
+    const comments = [];
+    while (k >= 0) {
+        const token = tokens[k];
+        if (token.type === 'Whitespace') {
+            // If it's a newline, we can check if it's multiple newlines
+            // but for now, just skip whitespace
+        }
+        else if (token.type === 'Comment') {
+            let val = token.value;
+            if (val.startsWith('//')) {
+                let content = val.substring(2).trim();
+                // Block tags: @param, @return, etc.
+                if (content.startsWith('@')) {
+                    content = content.replace(/^@(\w+)/, '**@$1**');
+                }
+                // Inline tags: {@link URL text} or {@link URL}
+                content = content.replace(/\{@link\s+([^}]+)\}/g, (match, p1) => {
+                    const parts = p1.trim().split(/\s+/);
+                    if (parts.length > 1) {
+                        return `[${parts.slice(1).join(' ')}](${parts[0]})`;
+                    }
+                    return `[${parts[0]}](${parts[0]})`;
+                });
+                comments.unshift(content);
+            }
+        }
+        else {
+            break;
+        }
+        k--;
+    }
+    return comments.join('  \n');
+}
+function rebuildUserFunctionNameCache() {
+    allUserFunctionNames.clear();
+    for (const symbols of workspaceSymbolCache.values()) {
+        for (const sym of symbols) {
+            if (sym.kind === node_1.SymbolKind.Function) {
+                allUserFunctionNames.add(sym.name);
+            }
+        }
     }
 }
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
@@ -595,36 +674,14 @@ documents.onDidChangeContent(change => {
 async function updateDocumentCache(doc) {
     const text = doc.getText();
     const uri = doc.uri;
-    const tokens = tokenize(text);
-    const symbols = [];
-    for (let i = 0; i < tokens.length; i++) {
-        const t = tokens[i];
-        if (t.type === 'Identifier') {
-            if (isDeclaration(tokens, i, 0)) {
-                let kind = node_1.SymbolKind.Variable;
-                let j = i - 1;
-                while (j >= 0 && tokens[j].type === 'Whitespace')
-                    j--;
-                if (j >= 0 && tokens[j].value === 'function') {
-                    kind = node_1.SymbolKind.Function;
-                }
-                symbols.push({
-                    name: t.value,
-                    kind: kind,
-                    location: node_1.Location.create(uri, {
-                        start: doc.positionAt(t.start),
-                        end: doc.positionAt(t.start + t.length)
-                    })
-                });
-            }
-        }
-    }
+    const symbols = extractSymbolsFromText(text, uri, doc);
     if (symbols.length > 0) {
         workspaceSymbolCache.set(uri, symbols);
     }
     else {
         workspaceSymbolCache.delete(uri);
     }
+    rebuildUserFunctionNameCache();
 }
 async function validateTextDocument(textDocument) {
     await resourcesPromise;
@@ -1863,55 +1920,48 @@ connection.onCompletion(async (textDocumentPosition) => {
         detail: 'if/else block',
         data: { language: lang }
     });
-    // --- NEW: Dynamic Function Detection ---
-    if (content) {
-        // 1. User Functions
-        const funcPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-        let m;
-        // We need to reset regex lastIndex if we reuse or just loop
-        while ((m = funcPattern.exec(content))) {
-            const funcName = m[1];
-            const args = m[2];
-            completions.push({
-                label: funcName,
-                kind: node_1.CompletionItemKind.Function,
-                detail: `User Function: (${args})`,
-                data: { type: 'user_func', key: funcName, language: lang }
-            });
-            // 2. Function Arguments (Global harvest for simplicity)
-            if (args) {
-                const argList = args.split(',');
-                for (const arg of argList) {
-                    const trimmedArg = arg.trim();
-                    if (!trimmedArg)
-                        continue;
-                    const parts = trimmedArg.split(':');
-                    const argName = parts[0].trim();
-                    const argType = parts[1] ? parts[1].trim() : 'any';
-                    // Avoid duplicates if possible (simple check)
-                    if (!completions.some(c => c.label === argName)) {
-                        completions.push({
-                            label: argName,
-                            kind: node_1.CompletionItemKind.Variable,
-                            detail: `Argument (${argType})`,
-                            data: { type: 'argument', key: argName, language: lang }
-                        });
-                    }
+    // --- NEW: Dynamic Function Detection (from workspace cache) ---
+    for (const [uri, symbols] of workspaceSymbolCache.entries()) {
+        for (const sym of symbols) {
+            if (sym.kind === node_1.SymbolKind.Function) {
+                if (!completions.some(c => c.label === sym.name)) {
+                    completions.push({
+                        label: sym.name,
+                        kind: node_1.CompletionItemKind.Function,
+                        detail: sym.signature ? `User Function: ${sym.signature}` : 'User Function',
+                        data: { type: 'user_func', key: sym.name, uri: uri, language: lang }
+                    });
                 }
             }
         }
-        // 3. Local Variables
-        const varRegex = /var(?::[a-zA-Z0-9_]+)?\s+([a-zA-Z0-9_]+)/g;
-        let mVar;
-        while ((mVar = varRegex.exec(content))) {
-            const varName = mVar[1];
-            if (!completions.some(c => c.label === varName)) {
-                completions.push({
-                    label: varName,
-                    kind: node_1.CompletionItemKind.Variable,
-                    detail: 'Local Variable',
-                    data: { type: 'local_var', key: varName, language: lang }
-                });
+    }
+    // --- NEW: Local Variable and Argument Detection (Current Document) ---
+    if (content) {
+        const tokens = tokenize(content);
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t.type === 'Identifier') {
+                if (isDeclaration(tokens, i, 0)) {
+                    // We already added global functions from cache.
+                    // Here we handle local variables and arguments.
+                    let isFunc = false;
+                    let j = i - 1;
+                    while (j >= 0 && tokens[j].type === 'Whitespace')
+                        j--;
+                    if (j >= 0 && tokens[j].value === 'function') {
+                        isFunc = true;
+                    }
+                    if (!isFunc) {
+                        if (!completions.some(c => c.label === t.value)) {
+                            completions.push({
+                                label: t.value,
+                                kind: node_1.CompletionItemKind.Variable,
+                                detail: 'Local Variable/Argument',
+                                data: { type: 'local_var', key: t.value, language: lang }
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -2025,6 +2075,27 @@ connection.onCompletionResolve(async (item) => {
             };
         }
     }
+    else if (data.type === 'user_func') {
+        let userSymbol;
+        if (data.uri) {
+            const symbols = workspaceSymbolCache.get(data.uri);
+            userSymbol = symbols?.find(s => s.name === data.key && s.kind === node_1.SymbolKind.Function);
+        }
+        else {
+            for (const symbols of workspaceSymbolCache.values()) {
+                userSymbol = symbols.find(s => s.name === data.key && s.kind === node_1.SymbolKind.Function);
+                if (userSymbol)
+                    break;
+            }
+        }
+        if (userSymbol) {
+            let docText = `**${userSymbol.signature || userSymbol.name}**\n\n*User Function*`;
+            if (userSymbol.description) {
+                docText += `\n\n${userSymbol.description}`;
+            }
+            item.documentation = { kind: 'markdown', value: docText };
+        }
+    }
     return item;
 });
 // --- Semantic Tokens Handler ---
@@ -2043,13 +2114,8 @@ connection.languages.semanticTokens.on((params) => {
     const booleanKeywords = new Set([
         'true', 'false'
     ]);
-    // 4. Scan for User Functions (to highlight calls)
-    const userFunctionNames = new Set();
-    const funcDeclPattern = /function\s+([a-zA-Z0-9_]+)\s*\(/g;
-    let funcMatch;
-    while ((funcMatch = funcDeclPattern.exec(text))) {
-        userFunctionNames.add(funcMatch[1]);
-    }
+    // 4. Use User Functions from cache (pre-calculated for performance)
+    const userFunctionNames = allUserFunctionNames;
     // Regex: Group 1 = Comment, Group 2 = String, Group 3 = Identifier
     const pattern = /(\/\/.*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|([$a-zA-Z0-9_.]+)/g;
     let match;
@@ -2318,6 +2384,23 @@ connection.onHover(async (textDocumentPosition) => {
                         range: hoveredRange
                     };
                 }
+            }
+            // Priority 2.5: User-defined Function
+            let userSymbol;
+            for (const symbols of workspaceSymbolCache.values()) {
+                userSymbol = symbols.find(s => s.name === hoveredWord && s.kind === node_1.SymbolKind.Function);
+                if (userSymbol)
+                    break;
+            }
+            if (userSymbol) {
+                let hoverText = `**${userSymbol.signature || userSymbol.name}**\n\n*User Function*`;
+                if (userSymbol.description) {
+                    hoverText += `\n\n${userSymbol.description}`;
+                }
+                return {
+                    contents: { kind: 'markdown', value: hoverText },
+                    range: hoveredRange
+                };
             }
             // Priority 3: Data Type (Type declaration context)
             let isTypeDecl = false;
