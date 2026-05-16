@@ -67,7 +67,8 @@ const legend = { tokenTypes, tokenModifiers };
 interface GlobalSymbol {
     name: string;
     kind: SymbolKind;
-    location: Location;
+    location: Location; // Full range
+    selectionRange: Range; // Name range
     description?: string;
     signature?: string;
 }
@@ -266,13 +267,42 @@ function extractSymbolsFromText(text: string, uri: string, doc: TextDocument): G
                     description = extractPrecedingComments(tokens, i);
                 }
 
+                let fullRange = Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length));
+                let selectionRange = Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length));
+
+                if (kind === SymbolKind.Function) {
+                    // Start from 'function' keyword
+                    fullRange.start = doc.positionAt(tokens[j].start);
+                    
+                    // Find matching closing brace for the body
+                    let k = i + 1;
+                    while (k < tokens.length && tokens[k].value !== '{') k++;
+                    if (k < tokens.length) {
+                        let depth = 1;
+                        k++;
+                        while (k < tokens.length) {
+                            if (tokens[k].value === '{') depth++;
+                            else if (tokens[k].value === '}') {
+                                depth--;
+                                if (depth === 0) {
+                                    fullRange.end = doc.positionAt(tokens[k].start + tokens[k].length);
+                                    // Include trailing semicolon if present
+                                    if (k + 1 < tokens.length && tokens[k+1].value === ';') {
+                                        fullRange.end = doc.positionAt(tokens[k+1].start + tokens[k+1].length);
+                                    }
+                                    break;
+                                }
+                            }
+                            k++;
+                        }
+                    }
+                }
+
                 symbols.push({
                     name: t.value,
                     kind: kind,
-                    location: Location.create(uri, {
-                        start: doc.positionAt(t.start),
-                        end: doc.positionAt(t.start + t.length)
-                    }),
+                    location: Location.create(uri, fullRange),
+                    selectionRange: selectionRange,
                     description,
                     signature
                 });
@@ -635,121 +665,30 @@ connection.onDocumentSymbol(async (params: DocumentSymbolParams): Promise<Docume
     }
 
     const text = doc.getText();
-    const symbols: DocumentSymbol[] = [];
-
-    // 1. Function patterns: function Name(...)
-    const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-    let match: RegExpExecArray | null;
-
-    // Reset index for search
-    functionPattern.lastIndex = 0;
-    while ((match = functionPattern.exec(text)) !== null) {
-        const name = match[1];
-        const startPos = doc.positionAt(match.index);
-        const endPos = doc.positionAt(match.index + match[0].length);
-        const range = Range.create(startPos, endPos);
-
-        // Selection range points to the name specifically
-        const nameOffset = match[0].indexOf(name);
-        const selectionRange = Range.create(
-            doc.positionAt(match.index + nameOffset),
-            doc.positionAt(match.index + nameOffset + name.length)
-        );
-
-        symbols.push(DocumentSymbol.create(
-            name,
-            undefined,
-            SymbolKind.Function,
-            range,
-            selectionRange
-        ));
-    }
-
-    // 2. Variable patterns: var:type Name
-    const varPattern = /var(?::[a-zA-Z0-9]+)?\s+([a-zA-Z0-9_]+)/g;
-    varPattern.lastIndex = 0;
-    while ((match = varPattern.exec(text)) !== null) {
-        const name = match[1];
-        const startPos = doc.positionAt(match.index);
-        const endPos = doc.positionAt(match.index + match[0].length);
-        const range = Range.create(startPos, endPos);
-
-        const nameOffset = match[0].indexOf(name);
-        const selectionRange = Range.create(
-            doc.positionAt(match.index + nameOffset),
-            doc.positionAt(match.index + nameOffset + name.length)
-        );
-
-        symbols.push(DocumentSymbol.create(
-            name,
-            undefined,
-            SymbolKind.Variable,
-            range,
-            selectionRange
-        ));
-    }
-
-    return symbols;
+    const symbols = extractSymbolsFromText(text, params.textDocument.uri, doc);
+    
+    return symbols.map(s => DocumentSymbol.create(
+        s.name,
+        s.signature || undefined,
+        s.kind,
+        s.location.range,
+        s.selectionRange
+    ));
 });
 
 connection.onWorkspaceSymbol((params: WorkspaceSymbolParams): SymbolInformation[] => {
     const query = params.query.toLowerCase();
     const symbols: SymbolInformation[] = [];
 
-    // currently we only scan open documents
-    // Note: A true workspace scan requires fs-based walking
-    const processedUris = new Set<string>();
-
-    documents.all().forEach(doc => {
-        processedUris.add(doc.uri);
-        const text = doc.getText();
-
-        // 1. Functions
-        const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-        let match;
-        while ((match = functionPattern.exec(text)) !== null) {
-            const name = match[1];
-            if (name.toLowerCase().includes(query)) {
-                const startPos = doc.positionAt(match.index);
-                const endPos = doc.positionAt(match.index + match[0].length);
-                symbols.push({
-                    name: name,
-                    kind: SymbolKind.Function,
-                    location: Location.create(doc.uri, Range.create(startPos, endPos)),
-                    containerName: 'tinderbox function'
-                });
-            }
-        }
-
-        // 2. Variables
-        const varPattern = /var(?::[a-zA-Z0-9]+)?\s+([a-zA-Z0-9_]+)/g;
-        while ((match = varPattern.exec(text)) !== null) {
-            const name = match[1];
-            // Skip variables that look like typical arguments (often very short or inside lists)
-            if (name.toLowerCase().includes(query) && name.length > 1) {
-                const startPos = doc.positionAt(match.index);
-                const endPos = doc.positionAt(match.index + match[0].length);
-                symbols.push({
-                    name: name,
-                    kind: SymbolKind.Variable,
-                    location: Location.create(doc.uri, Range.create(startPos, endPos))
-                });
-            }
-        }
-    });
-
-    // 3. Add from global cache for unopened files
     for (const [uri, globalSymbols] of workspaceSymbolCache.entries()) {
-        if (!processedUris.has(uri)) {
-            for (const sym of globalSymbols) {
-                if (sym.name.toLowerCase().includes(query)) {
-                    symbols.push({
-                        name: sym.name,
-                        kind: sym.kind,
-                        location: sym.location,
-                        containerName: sym.kind === SymbolKind.Function ? 'tinderbox function' : undefined
-                    });
-                }
+        for (const sym of globalSymbols) {
+            if (sym.name.toLowerCase().includes(query)) {
+                symbols.push({
+                    name: sym.name,
+                    kind: sym.kind,
+                    location: Location.create(uri, sym.selectionRange),
+                    containerName: sym.kind === SymbolKind.Function ? 'tinderbox function' : undefined
+                });
             }
         }
     }
@@ -3921,28 +3860,38 @@ connection.languages.callHierarchy.onPrepare(async (params) => {
     const targetToken = tokens.find(t => (t.type === 'Identifier' || t.type === 'Keyword') && offset >= t.start && offset <= t.start + t.length);
     if (!targetToken) return null;
 
-    let definition: Location | undefined;
+    let item: { name: string, range: Range, selectionRange: Range, uri: string } | undefined;
     const symbols = extractSymbolsFromText(text, doc.uri, doc);
     const funcSym = symbols.find(s => s.name === targetToken.value && s.kind === SymbolKind.Function);
     if (funcSym) {
-        definition = funcSym.location;
+        item = {
+            name: funcSym.name,
+            range: funcSym.location.range,
+            selectionRange: funcSym.selectionRange,
+            uri: doc.uri
+        };
     } else {
         for (const [uri, syms] of workspaceSymbolCache.entries()) {
             const globalFunc = syms.find(s => s.name === targetToken.value && s.kind === SymbolKind.Function);
             if (globalFunc) {
-                definition = globalFunc.location;
+                item = {
+                    name: globalFunc.name,
+                    range: globalFunc.location.range,
+                    selectionRange: globalFunc.selectionRange,
+                    uri: uri
+                };
                 break;
             }
         }
     }
 
-    if (definition) {
+    if (item) {
         return [{
-            name: targetToken.value,
+            name: item.name,
             kind: SymbolKind.Function,
-            uri: definition.uri,
-            range: definition.range,
-            selectionRange: definition.range,
+            uri: item.uri,
+            range: item.range,
+            selectionRange: item.selectionRange,
             detail: 'tinderbox function'
         }];
     }
@@ -3998,7 +3947,7 @@ connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
     const startOffset = doc.offsetAt(item.range.start);
     const endOffset = doc.offsetAt(item.range.end);
     const tokens = tokenize(text);
-    const callsByName = new Map<string, { uri: string, range: Range, fromRanges: Range[] }>();
+    const callsByName = new Map<string, { uri: string, range: Range, selectionRange: Range, fromRanges: Range[] }>();
 
     for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i];
@@ -4008,19 +3957,23 @@ connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
                 while (next < tokens.length && tokens[next].type === 'Whitespace') next++;
                 if (next < tokens.length && tokens[next].value === '(') {
                     const targetName = t.value;
-                    let definition: Location | undefined;
+                    let targetDef: { uri: string, range: Range, selectionRange: Range } | undefined;
                     const symbols = extractSymbolsFromText(text, item.uri, doc);
                     const funcSym = symbols.find(s => s.name === targetName && s.kind === SymbolKind.Function);
-                    if (funcSym) definition = funcSym.location;
-                    else {
+                    if (funcSym) {
+                        targetDef = { uri: item.uri, range: funcSym.location.range, selectionRange: funcSym.selectionRange };
+                    } else {
                         for (const [uri, syms] of workspaceSymbolCache.entries()) {
                             const globalFunc = syms.find(s => s.name === targetName && s.kind === SymbolKind.Function);
-                            if (globalFunc) { definition = globalFunc.location; break; }
+                            if (globalFunc) { 
+                                targetDef = { uri: uri, range: globalFunc.location.range, selectionRange: globalFunc.selectionRange }; 
+                                break; 
+                            }
                         }
                     }
-                    if (definition) {
+                    if (targetDef) {
                         if (!callsByName.has(targetName)) {
-                            callsByName.set(targetName, { uri: definition.uri, range: definition.range, fromRanges: [] });
+                            callsByName.set(targetName, { uri: targetDef.uri, range: targetDef.range, selectionRange: targetDef.selectionRange, fromRanges: [] });
                         }
                         callsByName.get(targetName)!.fromRanges.push(Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length)));
                     }
@@ -4030,7 +3983,13 @@ connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
     }
     for (const [name, info] of callsByName.entries()) {
         outgoingCalls.push({
-            to: { name: name, kind: SymbolKind.Function, uri: info.uri, range: info.range, selectionRange: info.range },
+            to: { 
+                name: name, 
+                kind: SymbolKind.Function, 
+                uri: info.uri, 
+                range: info.range, 
+                selectionRange: info.selectionRange || info.range 
+            },
             fromRanges: info.fromRanges
         });
     }
