@@ -219,6 +219,7 @@ async function indexFileForCache(filePath: string) {
     try {
         const text = await fs.promises.readFile(filePath, 'utf-8');
         const uri = URI.file(filePath).toString();
+        workspaceFiles.add(uri);
         const doc = TextDocument.create(uri, 'tinderbox-action-code', 1, text);
         const symbols = extractSymbolsFromText(text, uri, doc);
 
@@ -846,6 +847,7 @@ documents.onDidChangeContent(change => {
 async function updateDocumentCache(doc: TextDocument) {
     const text = doc.getText();
     const uri = doc.uri;
+    workspaceFiles.add(uri);
     const symbols = extractSymbolsFromText(text, uri, doc);
 
     if (symbols.length > 0) {

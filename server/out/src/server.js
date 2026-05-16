@@ -145,6 +145,7 @@ async function indexFileForCache(filePath) {
     try {
         const text = await fs.promises.readFile(filePath, 'utf-8');
         const uri = vscode_uri_1.URI.file(filePath).toString();
+        workspaceFiles.add(uri);
         const doc = vscode_languageserver_textdocument_1.TextDocument.create(uri, 'tinderbox-action-code', 1, text);
         const symbols = extractSymbolsFromText(text, uri, doc);
         if (symbols.length > 0) {
@@ -715,6 +716,7 @@ documents.onDidChangeContent(change => {
 async function updateDocumentCache(doc) {
     const text = doc.getText();
     const uri = doc.uri;
+    workspaceFiles.add(uri);
     const symbols = extractSymbolsFromText(text, uri, doc);
     if (symbols.length > 0) {
         workspaceSymbolCache.set(uri, symbols);
