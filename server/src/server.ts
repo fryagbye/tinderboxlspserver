@@ -40,7 +40,10 @@ import {
     SymbolInformation,
     Position,
     DiagnosticTag,
-    FormattingOptions
+    FormattingOptions,
+    CallHierarchyIncomingCall,
+    CallHierarchyItem,
+    CallHierarchyOutgoingCall
 } from 'vscode-languageserver/node';
 
 import {
@@ -143,7 +146,9 @@ connection.onInitialize((params: InitializeParams) => {
             // Code Action capability
             codeActionProvider: true,
             // Workspace Symbol capability
-            workspaceSymbolProvider: true
+            workspaceSymbolProvider: true,
+            // Call Hierarchy capability
+            callHierarchyProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -3758,7 +3763,278 @@ connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
         }
     }
 
+    // 4. Extract to function (Refactoring Code Action)
+    // Available when there is a selection (can be multiline)
+    if (range.start.line !== range.end.line || range.start.character !== range.end.character) {
+        const doc = documents.get(params.textDocument.uri);
+        if (doc) {
+            const text = doc.getText();
+            const startOffset = doc.offsetAt(range.start);
+            const endOffset = doc.offsetAt(range.end);
+            const selectedText = text.substring(startOffset, endOffset);
+
+            if (selectedText.trim().length > 0) {
+                const funcName = 'newFunction';
+                const tokens = tokenize(text);
+                
+                // Identify parameters (identifiers used in selection but not declared in it)
+                const declaredInSelection = new Set<string>();
+                const usedInSelection = new Set<string>();
+                
+                tokens.forEach((t, i) => {
+                    if (t.start >= startOffset && t.start + t.length <= endOffset) {
+                        if (t.type === 'Identifier') {
+                            if (isDeclaration(tokens, i)) {
+                                declaredInSelection.add(t.value);
+                            } else {
+                                // Exclude attributes, operators, and keywords
+                                if (!t.value.startsWith('$') && !tinderboxOperators.has(t.value) && !keywordNames.has(t.value)) {
+                                    usedInSelection.add(t.value);
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                const parameters = Array.from(usedInSelection).filter(v => !declaredInSelection.has(v));
+                const paramsList = parameters.join(', ');
+                
+                // Find insertion point: end of file
+                const lastLine = doc.lineCount;
+                const lastLineText = doc.getText(Range.create(lastLine - 1, 0, lastLine - 1, 1000));
+                const insertionPos = Position.create(lastLine, 0);
+                
+                // Ensure there is a newline before the new function
+                const prefix = lastLineText.trim().length > 0 ? '\n\n' : '\n';
+                const newFuncDef = `${prefix}function ${funcName}(${paramsList}) {\n${selectedText.split('\n').map(l => '    ' + l).join('\n')}\n}\n`;
+                const call = `${funcName}(${paramsList});`;
+
+                codeActions.push({
+                    title: `Extract to function ('${funcName}')`,
+                    kind: CodeActionKind.RefactorExtract,
+                    edit: {
+                        changes: {
+                            [params.textDocument.uri]: [
+                                {
+                                    range: range,
+                                    newText: call
+                                },
+                                {
+                                    range: Range.create(insertionPos, insertionPos),
+                                    newText: newFuncDef
+                                }
+                            ]
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     return codeActions;
+});
+
+
+async function getReferenceLocationsForName(targetName: string): Promise<Location[]> {
+    const references: Location[] = [];
+    for (const uri of workspaceFiles) {
+        try {
+            let content: string;
+            const openDoc = documents.get(uri);
+            if (openDoc) {
+                content = openDoc.getText();
+            } else {
+                content = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
+            }
+            if (content.includes(targetName)) {
+                const tokens = tokenize(content);
+                const doc = openDoc || TextDocument.create(uri, 'tinderbox-action-code', 0, content);
+                tokens.forEach((t, i) => {
+                    if (t.type === 'Identifier' && t.value === targetName) {
+                        if (!isDeclaration(tokens, i)) {
+                            references.push(Location.create(uri, Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length))));
+                        }
+                    }
+                });
+            }
+        } catch (e) {}
+    }
+    return references;
+}
+
+async function getContainingFunction(location: Location): Promise<{ name: string, uri: string, range: Range } | null> {
+    const docUri = location.uri;
+    let text: string;
+    try {
+        const openDoc = documents.get(docUri);
+        if (openDoc) {
+            text = openDoc.getText();
+        } else {
+            text = await fs.promises.readFile(URI.parse(docUri).fsPath, 'utf8');
+        }
+    } catch (e) {
+        return null;
+    }
+    
+    const tokens = tokenize(text);
+    const doc = TextDocument.create(docUri, 'tbox', 0, text);
+    const offset = doc.offsetAt(location.range.start);
+    
+    let braceDepth = 0;
+    let functionStart = -1;
+    let functionName = 'anonymous';
+    
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type === 'Keyword' && t.value === 'function') {
+            functionStart = t.start;
+            let next = i + 1;
+            while (next < tokens.length && tokens[next].type === 'Whitespace') next++;
+            if (next < tokens.length && tokens[next].type === 'Identifier') {
+                functionName = tokens[next].value;
+            }
+        }
+        if (t.type === 'Punctuation' && t.value === '{') braceDepth++;
+        if (t.type === 'Punctuation' && t.value === '}') {
+            braceDepth--;
+            if (braceDepth === 0 && functionStart !== -1) {
+                if (offset >= functionStart && offset <= t.start + t.length) {
+                    return {
+                        name: functionName,
+                        uri: docUri,
+                        range: Range.create(doc.positionAt(functionStart), doc.positionAt(t.start + t.length))
+                    };
+                }
+                functionStart = -1;
+            }
+        }
+    }
+    return null;
+}
+
+connection.languages.callHierarchy.onPrepare(async (params) => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    const text = doc.getText();
+    const offset = doc.offsetAt(params.position);
+    const tokens = tokenize(text);
+    const targetToken = tokens.find(t => (t.type === 'Identifier' || t.type === 'Keyword') && offset >= t.start && offset <= t.start + t.length);
+    if (!targetToken) return null;
+
+    let definition: Location | undefined;
+    const symbols = extractSymbolsFromText(text, doc.uri, doc);
+    const funcSym = symbols.find(s => s.name === targetToken.value && s.kind === SymbolKind.Function);
+    if (funcSym) {
+        definition = funcSym.location;
+    } else {
+        for (const [uri, syms] of workspaceSymbolCache.entries()) {
+            const globalFunc = syms.find(s => s.name === targetToken.value && s.kind === SymbolKind.Function);
+            if (globalFunc) {
+                definition = globalFunc.location;
+                break;
+            }
+        }
+    }
+
+    if (definition) {
+        return [{
+            name: targetToken.value,
+            kind: SymbolKind.Function,
+            uri: definition.uri,
+            range: definition.range,
+            selectionRange: definition.range,
+            detail: 'tinderbox function'
+        }];
+    }
+    return null;
+});
+
+connection.languages.callHierarchy.onIncomingCalls(async (params) => {
+    const targetName = params.item.name;
+    const incomingCalls: CallHierarchyIncomingCall[] = [];
+    const refs = await getReferenceLocationsForName(targetName);
+    const callsByCaller = new Map<string, { name: string, uri: string, range: Range, fromRanges: Range[] }>();
+
+    for (const ref of refs) {
+        const caller = await getContainingFunction(ref);
+        const key = caller ? `${caller.uri}:${caller.range.start.line}:${caller.range.start.character}` : `${ref.uri}:top`;
+        if (!callsByCaller.has(key)) {
+            callsByCaller.set(key, { 
+                name: caller ? caller.name : 'top-level', 
+                uri: ref.uri, 
+                range: caller ? caller.range : Range.create(0, 0, 0, 0), 
+                fromRanges: [] 
+            });
+        }
+        callsByCaller.get(key)!.fromRanges.push(ref.range);
+    }
+
+    for (const callerInfo of callsByCaller.values()) {
+        incomingCalls.push({
+            from: {
+                name: callerInfo.name,
+                kind: SymbolKind.Function,
+                uri: callerInfo.uri,
+                range: callerInfo.range,
+                selectionRange: callerInfo.range
+            },
+            fromRanges: callerInfo.fromRanges
+        });
+    }
+    return incomingCalls;
+});
+
+connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
+    const item = params.item;
+    const outgoingCalls: CallHierarchyOutgoingCall[] = [];
+    let text: string;
+    try {
+        const openDoc = documents.get(item.uri);
+        if (openDoc) text = openDoc.getText();
+        else text = await fs.promises.readFile(URI.parse(item.uri).fsPath, 'utf8');
+    } catch (e) { return null; }
+    
+    const doc = documents.get(item.uri) || TextDocument.create(item.uri, 'tinderbox-action-code', 0, text);
+    const startOffset = doc.offsetAt(item.range.start);
+    const endOffset = doc.offsetAt(item.range.end);
+    const tokens = tokenize(text);
+    const callsByName = new Map<string, { uri: string, range: Range, fromRanges: Range[] }>();
+
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.start >= startOffset && t.start + t.length <= endOffset) {
+            if (t.type === 'Identifier' && !isDeclaration(tokens, i)) {
+                let next = i + 1;
+                while (next < tokens.length && tokens[next].type === 'Whitespace') next++;
+                if (next < tokens.length && tokens[next].value === '(') {
+                    const targetName = t.value;
+                    let definition: Location | undefined;
+                    const symbols = extractSymbolsFromText(text, item.uri, doc);
+                    const funcSym = symbols.find(s => s.name === targetName && s.kind === SymbolKind.Function);
+                    if (funcSym) definition = funcSym.location;
+                    else {
+                        for (const [uri, syms] of workspaceSymbolCache.entries()) {
+                            const globalFunc = syms.find(s => s.name === targetName && s.kind === SymbolKind.Function);
+                            if (globalFunc) { definition = globalFunc.location; break; }
+                        }
+                    }
+                    if (definition) {
+                        if (!callsByName.has(targetName)) {
+                            callsByName.set(targetName, { uri: definition.uri, range: definition.range, fromRanges: [] });
+                        }
+                        callsByName.get(targetName)!.fromRanges.push(Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length)));
+                    }
+                }
+            }
+        }
+    }
+    for (const [name, info] of callsByName.entries()) {
+        outgoingCalls.push({
+            to: { name: name, kind: SymbolKind.Function, uri: info.uri, range: info.range, selectionRange: info.range },
+            fromRanges: info.fromRanges
+        });
+    }
+    return outgoingCalls;
 });
 
 // Make the text document manager listen on the connection
