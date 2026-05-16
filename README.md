@@ -104,9 +104,12 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.4.9
+- **Feature**: **Call Hierarchy**: Support for viewing incoming and outgoing calls for user-defined functions across the workspace.
+- **Feature**: **Extract to Function**: Select a block of code and extract it into a new function definition with automatic parameter detection.
+
 ### 0.4.8
-- **Feature**: **Call Hierarchy**: Support for viewing incoming and outgoing calls for user-defined functions.
-- **Feature**: **Extract to Function**: Select a block of code and extract it into a new function definition.
+- Improvement: Refined call hierarchy detection accuracy.
 
 ### 0.4.7
 - **Feature**: **Intelligent Export Code Formatting**: Support for formatting Action Code inside `^...^` tags in `.tbxe` files while preserving the surrounding template structure.

@@ -2,10 +2,14 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
-## [0.4.8] - 2026-05-16
+## [0.4.9] - 2026-05-16
 ### Added
 - **Code Action**: Added "Extract to Function" refactoring.
-- **Call Hierarchy**: Implemented support for "Show Call Hierarchy" (incoming and outgoing calls).
+- **Call Hierarchy**: Implemented support for "Show Call Hierarchy" (incoming and outgoing calls) with workspace-wide accurate detection.
+
+## [0.4.8] - 2026-05-16
+### Fixed
+- Internal improvements to call hierarchy detection logic.
 
 ## [0.4.7] - 2026-05-16
 ### Added
