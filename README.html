@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.37">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>readme</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="README_files/libs/clipboard/clipboard.min.js"></script>
+<script src="README_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="README_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="README_files/libs/quarto-html/popper.min.js"></script>
+<script src="README_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="README_files/libs/quarto-html/anchor.min.js"></script>
+<link href="README_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="README_files/libs/quarto-html/quarto-syntax-highlighting-7f8f88aac4f3542376d5c11b86a4c14d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="README_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="README_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="README_files/libs/bootstrap/bootstrap-138a6193a3bd40baf1e627da441a4734.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="tinderbox-action-code-lsp" class="level1">
+<h1>Tinderbox Action Code LSP</h1>
+<p>A Language Server Protocol (LSP) implementation for <a href="https://www.eastgate.com/Tinderbox/">Tinderbox</a> Action Code, providing rich editing features in VS Code.</p>
+<section id="features" class="level2">
+<h2 class="anchored" data-anchor-id="features">Features</h2>
+<section id="code-completion" class="level3">
+<h3 class="anchored" data-anchor-id="code-completion">1. Code Completion</h3>
+<ul>
+<li><strong>Operators</strong>: Autocomplete for all standard Tinderbox operators (e.g., <code>linkTo</code>, <code>collect</code>).</li>
+<li><strong>Attributes</strong>: Suggestions for System Attributes (e.g., <code>$Name</code>, <code>$Text</code>) and User Attributes.</li>
+<li><strong>Export Tags</strong>: Autocomplete for Export Tags (e.g., <code>^value()^</code>, <code>^if()^</code>) in template files.</li>
+<li><strong>Keywords</strong>: Completion for reserved words (<code>if</code>, <code>else</code>, <code>var</code>, <code>function</code>).</li>
+<li><strong>Variables &amp; Functions</strong>: Dynamic completion for locally declared variables (<code>var:string vStr</code>) and functions.</li>
+<li><strong>Snippets</strong>: Function completion includes argument placeholders.</li>
+<li><strong>Colors</strong>: Autocomplete for Tinderbox defined colors (e.g., <code>blue</code>, <code>poppy</code>). <img src="https://github.com/fryagbye/tinderboxlspserver/raw/main/images/completion.gif" class="img-fluid" alt="Completion"></li>
+</ul>
+</section>
+<section id="hover-documentation" class="level3">
+<h3 class="anchored" data-anchor-id="hover-documentation">2. Hover Documentation</h3>
+<ul>
+<li><strong>Operator Details</strong>: Hover over an operator to see its syntax, return type, and description.</li>
+<li><strong>Attribute Info</strong>: View descriptions and types for System Attributes.</li>
+<li><strong>Export Tag Info</strong>: View official documentation and Japanese translations for Export Tags.</li>
+<li><strong>Color Info</strong>: View hex codes and descriptions for named colors.</li>
+<li><strong>Bilingual Support</strong>: Toggle between English and Japanese descriptions via <code>tinderboxActionCodeServer.language</code>. <img src="https://github.com/fryagbye/tinderboxlspserver/raw/main/images/hover.gif" class="img-fluid" alt="Hover"></li>
+</ul>
+</section>
+<section id="validation-diagnostics" class="level3">
+<h3 class="anchored" data-anchor-id="validation-diagnostics">3. Validation / Diagnostics</h3>
+<ul>
+<li><strong>Syntax Checking</strong>: Detects unclosed strings and missing semicolons (heuristic-based).</li>
+<li><strong>Reserved Words</strong>: Warns if a reserved word (e.g., <code>number</code>, <code>if</code>) is used as a variable name.</li>
+<li><strong>Smart Quotes</strong>: Warns about smart quotes (<code>“</code>, <code>”</code>) which are invalid in Action Code.</li>
+<li><strong>Case Mismatch</strong>: Warns if an identifier has incorrect casing (e.g., <code>$name</code> vs <code>$Name</code>).</li>
+</ul>
+</section>
+<section id="definition-references" class="level3">
+<h3 class="anchored" data-anchor-id="definition-references">4. Definition &amp; References</h3>
+<ul>
+<li><strong>Go to Definition</strong>: Jump to the definition of user-defined functions, variables, and arguments within the document, <strong>as well as across the entire workspace via background scanning</strong>.</li>
+<li><strong>Scope Awareness</strong>: Context-sensitive jumping that correctly resolves variables even when multiple functions share the same identifier names.</li>
+<li><strong>Workspace Symbols</strong>: Press <code>Cmd + T</code> (Mac) or <code>Ctrl + T</code> (Windows/Linux) to search for functions and variables across all open documents <strong>and the background-scanned workspace</strong>.</li>
+</ul>
+</section>
+<section id="advanced-assistance" class="level3">
+<h3 class="anchored" data-anchor-id="advanced-assistance">5. Advanced Assistance</h3>
+<ul>
+<li><strong>Signature Help</strong>: Intelligent parameter tracking that correctly counts arguments even through nested parentheses and commas inside strings, highlighting the current parameter you are typing.</li>
+<li><strong>Semantic Tokens</strong>: Dynamic modifier assignment. Read-only system attributes receive a <code>readonly</code> modifier, and built-in attributes receive <code>defaultLibrary</code>, allowing for more precise semantic highlighting in compatible themes.</li>
+<li><strong>Code Actions</strong>: Select an expression within a line and use Quick Fix (<code>Cmd + .</code>) to “Extract to variable”. It automatically inserts a <code>var:string</code> definition while preserving indentation.</li>
+<li><strong>Enhanced Snippets</strong>: Included control flow snippets specifically for Tinderbox, such as <code>each</code>, <code>if</code> and <code>ifelse</code> blocks.</li>
+</ul>
+</section>
+<section id="export-code-support" class="level3">
+<h3 class="anchored" data-anchor-id="export-code-support">6. Export Code Support</h3>
+<ul>
+<li><strong>Robust Parsing</strong>: Handles nested tags (e.g., <code>^include(^value()...)^</code>) and balanced parentheses.</li>
+<li><strong>Path Protection</strong>: Intelligently distinguishes between division operators and path separators in paths like <code>/Templates/Note</code>.</li>
+<li><strong>String &amp; Regex Aware</strong>: Accurately parses tags even when they contain complex regex or strings with parentheses.</li>
+</ul>
+</section>
+<section id="token-based-parsing-engine" class="level3">
+<h3 class="anchored" data-anchor-id="token-based-parsing-engine">7. Token-Based Parsing Engine</h3>
+<ul>
+<li><strong>Robust State Tracking</strong>: The core parser has been upgraded from simple regex scanning to a robust, token-based state machine. This change significantly improves the accuracy of context-aware features such as signature help, hover information, and variable scoping—especially when dealing with complex nested structures, parentheses, and method chains.</li>
+</ul>
+</section>
+<section id="user-defined-function-documentation" class="level3">
+<h3 class="anchored" data-anchor-id="user-defined-function-documentation">8. User-Defined Function Documentation</h3>
+<ul>
+<li><strong>Automatic Extraction</strong>: Automatically extracts preceding line comments (<code>//</code>) as function documentation.</li>
+<li><strong>Tag Support</strong>: Supports JSDoc-style block tags (<code>@param</code>, <code>@return</code>, etc.) and inline tags (<code>{@link}</code>) within line comments.</li>
+<li><strong>Workspace-wide Scope</strong>: Recognizes and documents user functions defined in any file across the entire workspace.</li>
+</ul>
+</section>
+</section>
+<section id="configuration" class="level2">
+<h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Setting</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>tinderboxActionCodeServer.maxNumberOfProblems</code></td>
+<td style="text-align: left;">Maximum number of problems reported.</td>
+<td style="text-align: left;"><code>1000</code></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>tinderboxActionCodeServer.language</code></td>
+<td style="text-align: left;">Language for descriptions (<code>en</code> or <code>ja</code>).</td>
+<td style="text-align: left;"><code>en</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="customizing-colors" class="level2">
+<h2 class="anchored" data-anchor-id="customizing-colors">Customizing Colors</h2>
+<p>While the extension provides default color mappings that adapt to your theme, you can manually override specific colors in your <code>settings.json</code> for even finer control. This is particularly useful if you want to distinguish between system and user attributes or built-in and user functions more clearly:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="st">"editor.semanticTokenColorCustomizations"</span><span class="er">:</span> <span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"enabled"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"rules"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"method:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#004cff"</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"method:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#ff00ff"</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"function:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#4EC9B0"</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"function:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#4EC9B0"</span><span class="fu">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"property:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#7841e7"</span><span class="fu">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"property:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#7841e7"</span><span class="fu">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"enumMember:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#3e88d8ff"</span><span class="fu">,</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"enumMember:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#3e88d8ff"</span><span class="fu">,</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"parameter:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#c84444ff"</span><span class="fu">,</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"parameter:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#c84444ff"</span><span class="fu">,</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"variable:tinderbox-action-code"</span><span class="fu">:</span> <span class="st">"#ffffffd0"</span><span class="fu">,</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"variable:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#ffffffd0"</span><span class="fu">,</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"macro:tinderbox-export-code"</span><span class="fu">:</span> <span class="st">"#ff00ff"</span>    <span class="er">//</span> <span class="er">Export</span> <span class="er">Tag</span> <span class="er">caret</span> <span class="er">(^)</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="usage" class="level2">
+<h2 class="anchored" data-anchor-id="usage">Usage</h2>
+<p>The extension automatically recognizes the following file types: - <strong><code>.tbxa</code></strong>: Tinderbox Action Code files. - <strong><code>.tbxe</code></strong>: Tinderbox Export Code (Template) files. - <strong><code>.tbxc</code></strong>: Legacy Tinderbox Action Code files (supported for backward compatibility).</p>
+<p>If you are working with other file types (like <code>.txt</code>), you can manually set the language mode to <strong>Tinderbox Action Code</strong> or <strong>Tinderbox Export Code</strong> via the Language Mode selector in the VS Code status bar.</p>
+</section>
+<section id="requirements" class="level2">
+<h2 class="anchored" data-anchor-id="requirements">Requirements</h2>
+<ul>
+<li>VS Code 1.75.0 or higher.</li>
+</ul>
+</section>
+<section id="known-issues" class="level2">
+<h2 class="anchored" data-anchor-id="known-issues">Known Issues</h2>
+<ul>
+<li>While the parser now utilizes a robust token-based approach for high-level language features (such as hover and signature help), some structural validation checks may occasionally be tricked by extremely complex or irregular nested structures.</li>
+</ul>
+</section>
+<section id="release-notes" class="level2">
+<h2 class="anchored" data-anchor-id="release-notes">Release Notes</h2>
+<section id="section" class="level3">
+<h3 class="anchored" data-anchor-id="section">0.4.3</h3>
+<ul>
+<li><strong>Feature</strong>: <strong>Automatic Theme Color Support</strong>: Integrated default semantic token scopes into the package to automatically adjust colors for dark and light themes.</li>
+<li><strong>Improvement</strong>: Refined token assignments for built-in functions (<code>method</code>), system attributes (<code>property</code>), and user functions (<code>function</code>) to maximize color variety.</li>
+</ul>
+</section>
+<section id="section-1" class="level3">
+<h3 class="anchored" data-anchor-id="section-1">0.4.2</h3>
+<ul>
+<li><strong>Feature</strong>: <strong>Enhanced Semantic Highlighting</strong>: refactored the highlighting engine to provide more accurate color-coding for built-in functions, numbers, parameters, and attributes.</li>
+<li><strong>Improvement</strong>: Improved built-in function recognition (e.g., <code>collect_if</code>, <code>update</code>, <code>create</code>, <code>delete</code>).</li>
+<li><strong>Improvement</strong>: Added numerical literal highlighting.</li>
+<li><strong>Improvement</strong>: Added context-aware highlighting for type names vs.&nbsp;function calls (e.g., <code>date()</code> vs.&nbsp;<code>date</code>).</li>
+<li><strong>Improvement</strong>: Distinct coloring for System vs.&nbsp;User attributes.</li>
+<li><strong>Improvement</strong>: Function arguments are now distinctly colored from local variables.</li>
+<li><strong>Improvement</strong>: Identifiers preceded by a dot (chained operators) are now consistently highlighted as functions.</li>
+</ul>
+</section>
+<section id="section-2" class="level3">
+<h3 class="anchored" data-anchor-id="section-2">0.4.1</h3>
+<ul>
+<li><strong>Fix</strong>: Removed block comment references in documentation and refined line-comment JSDoc tag support.</li>
+</ul>
+</section>
+<section id="section-3" class="level3">
+<h3 class="anchored" data-anchor-id="section-3">0.4.0</h3>
+<ul>
+<li><strong>Feature</strong>: <strong>User-Defined Function Documentation</strong>: Preceding line comments (<code>//</code>) and included JSDoc tags are now automatically extracted and displayed as documentation in hover and completion suggestions.</li>
+<li><strong>Feature</strong>: <strong>Workspace-wide User Function Support</strong>: Completion and highlighting now recognize user functions defined in any file within the workspace.</li>
+</ul>
+</section>
+<section id="section-4" class="level3">
+<h3 class="anchored" data-anchor-id="section-4">0.3.9</h3>
+<ul>
+<li>Fix: Finalized <code>completionItem/resolve</code> fix.</li>
+<li>Update: Synchronized internal resources (Operators, Attributes, <strong>Designators</strong>, etc) with the latest <strong>aTbRef</strong> (Thu, 30 Apr 2026).</li>
+</ul>
+</section>
+<section id="section-5" class="level3">
+<h3 class="anchored" data-anchor-id="section-5">0.3.8</h3>
+<ul>
+<li>Fix: Resolved an issue where <code>completionItem/resolve</code> requests failed due to missing <code>data</code> property.</li>
+</ul>
+</section>
+<section id="section-6" class="level3">
+<h3 class="anchored" data-anchor-id="section-6">0.3.7</h3>
+<ul>
+<li>Fix: Suppressed “Missing semicolon?” warnings for expressions within <code>^if()^</code>, <code>^not()^</code>, and <code>^do()^</code> tags in Export Code.</li>
+</ul>
+</section>
+<section id="section-7" class="level3">
+<h3 class="anchored" data-anchor-id="section-7">0.3.6</h3>
+<ul>
+<li>Fix: Prevented automatic space insertion for all operator symbols (e.g., <code>+</code>, <code>-</code>, <code>*</code>, <code>=</code>, <code>&amp;</code>, <code>|</code>) within string literals and in-line comments.</li>
+<li>Update: Added subtraction (<code>-</code>) and logical operators (<code>&amp;</code>, <code>|</code>) to the formatting rules.</li>
+</ul>
+</section>
+<section id="section-8" class="level3">
+<h3 class="anchored" data-anchor-id="section-8">0.3.5</h3>
+<ul>
+<li>Fix: Resolved an issue where slashes (<code>/</code>) within string literals or in-line comments were incorrectly identified as operators during formatting, ensuring path-like strings are preserved.</li>
+</ul>
+</section>
+<section id="section-9" class="level3">
+<h3 class="anchored" data-anchor-id="section-9">0.3.4</h3>
+<ul>
+<li>Update: Automated the CSV extraction and translation process for improved metadata management.</li>
+<li>Update: Streamlined internal resource CSV filenames (e.g., <code>data_types_v2.csv</code> -&gt; <code>data_types.csv</code>).</li>
+</ul>
+</section>
+<section id="section-10" class="level3">
+<h3 class="anchored" data-anchor-id="section-10">0.3.3</h3>
+<ul>
+<li>Feature: <strong>Go to Definition</strong> now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.</li>
+<li>Update: Implemented a robust workspace global cache that updates dynamically on file changes.</li>
+</ul>
+</section>
+<section id="section-11" class="level3">
+<h3 class="anchored" data-anchor-id="section-11">0.3.2</h3>
+<ul>
+<li>Fix: Prevented unnecessary addition of double carets (<code>^^</code>) in Export Code hover headings.</li>
+<li>Fix: Preserved caret-enclosed phrases (e.g., <code>^action^</code>) from being translated during the <code>export_tags.csv</code> translation process.</li>
+</ul>
+</section>
+<section id="section-12" class="level3">
+<h3 class="anchored" data-anchor-id="section-12">0.3.1</h3>
+<ul>
+<li>Fix: Normalized multiple carets (<code>^^</code> to <code>^</code>) in Export Tags auto-completion and hover documentation.</li>
+<li>Update: Updated internal data types in v2 definition files.</li>
+</ul>
+</section>
+<section id="section-13" class="level3">
+<h3 class="anchored" data-anchor-id="section-13">0.3.0</h3>
+<ul>
+<li>Feature: <strong>Workspace Symbols</strong> (<code>Cmd/Ctrl+T</code>) support for searching functions and variables across documents.</li>
+<li>Feature: <strong>Code Action</strong> for refactoring: “Extract to variable”.</li>
+<li>Feature: <strong>Enhanced Snippets</strong> tailored for Tinderbox (<code>each</code>, <code>if</code>, etc).</li>
+<li>Feature: <strong>Semantic Tokens Evolution</strong>: Added <code>readonly</code> and <code>defaultLibrary</code> modifiers for System Attributes, allowing distinct coloring for unmodifiable values.</li>
+<li>Improved: <strong>Signature Help</strong> accuracy massively increased by replacing regex ahead-scanning with tokenizer-based state parsing (respects nested parens and string literals).</li>
+<li>Fix: Addressed an issue where Hover failed for expressions containing string literals with parentheses or operators (e.g., <code>vStr.deleteCharacters("()</code>“).lowercase()`). Now uses robust token sequence matching.</li>
+</ul>
+</section>
+<section id="section-14" class="level3">
+<h3 class="anchored" data-anchor-id="section-14">0.2.2</h3>
+<ul>
+<li>Feature: <strong>Full Export Code Support</strong> (<code>.tbxe</code>) with support for nested tags and balanced parentheses.</li>
+<li>Improved: Robust parsing logic for strings and regex within tags.</li>
+<li>Fix: Recursive validation masking to prevent false positive diagnostics in complex expressions.</li>
+<li>Fix: Caret preservation in Export Tag completion.</li>
+<li>Fix: Formatter improvements for paths and <code>.tbxe</code> files.</li>
+</ul>
+</section>
+<section id="section-15" class="level3">
+<h3 class="anchored" data-anchor-id="section-15">0.2.1</h3>
+<ul>
+<li>Fix: Resolved hover information mismatch for <code>.each()</code> operators by refining type inference and context-aware matching (e.g., correctly distinguishing between <code>list.each</code>, <code>JSON.each</code>, and <code>XML.each</code>).</li>
+</ul>
+</section>
+<section id="section-16" class="level3">
+<h3 class="anchored" data-anchor-id="section-16">0.2.0</h3>
+<ul>
+<li>Feature: <strong>Color Support</strong> (Completion and Hover for defined colors).</li>
+<li>Feature: Color hex code display in hover.</li>
+<li>Feature: <strong>Go to Definition</strong> for user-defined functions and variables (Scope-aware).</li>
+<li>Fix: Resolved server crash (<code>Invalid regular expression</code>) with unescaped characters.</li>
+<li>Fix: Enhanced Hover for chained expressions, arguments, and loops.</li>
+<li>Revert: “Go to Definition” for built-in items was reverted.</li>
+</ul>
+<details>
+<summary>
+Earlier Releases
+</summary>
+</details></section>
+<section id="section-17" class="level3">
+<h3 class="anchored" data-anchor-id="section-17">0.1.9</h3>
+<ul>
+<li>Fix: Resolved a crash (<code>Invalid regular expression</code>) caused by unescaped special characters (like unclosed parentheses) during hover/completion.</li>
+</ul>
+</section>
+<section id="section-18" class="level3">
+<h3 class="anchored" data-anchor-id="section-18">0.1.8</h3>
+<ul>
+<li>Feature: <strong>Go to Definition</strong> (Scope-aware jumping for functions/variables).</li>
+<li>Fix: Hover for chained expressions (e.g., <code>$Text(aID).eachLine()</code>).</li>
+<li>Fix: Enhanced hover for untyped variables, loop variables, and arguments.</li>
+<li>Fix: Robust operator name matching (cleaner identification of iterators).</li>
+</ul>
+</section>
+<section id="section-19" class="level3">
+<h3 class="anchored" data-anchor-id="section-19">0.1.7</h3>
+<ul>
+<li>Doc: Added information about <code>.tbxc</code> extension support.</li>
+<li>Doc: Improved layout for release notes.</li>
+</ul>
+</section>
+<section id="section-20" class="level3">
+<h3 class="anchored" data-anchor-id="section-20">0.1.6</h3>
+<ul>
+<li>Fix: Localization (Japanese setting now works).</li>
+<li>Fix: Validation (Smarter semicolon check).</li>
+</ul>
+</section>
+<section id="section-21" class="level3">
+<h3 class="anchored" data-anchor-id="section-21">0.1.5</h3>
+<ul>
+<li>Fix: Data Type Hover (shows type info in <code>var:type</code>).</li>
+<li>Fix: Packaging configuration.</li>
+</ul>
+</section>
+<section id="section-22" class="level3">
+<h3 class="anchored" data-anchor-id="section-22">0.1.4</h3>
+<ul>
+<li>Fix: Robust Dot Completion (Scope, Chains, Arguments).</li>
+<li>Fix: Double Insertion (Parens, $).</li>
+<li>Fix: Global Function Hover.</li>
+</ul>
+</section>
+<section id="section-23" class="level3">
+<h3 class="anchored" data-anchor-id="section-23">0.1.3</h3>
+<ul>
+<li>Feature: Type-aware Dot Completion (filters based on scoped types).</li>
+<li>Fix: Attributes excluded from dot completion suggestions.</li>
+<li>Fix: Expanded Operator Scope logic (IsDotOp/OpScope).</li>
+</ul>
+</section>
+<section id="section-24" class="level3">
+<h3 class="anchored" data-anchor-id="section-24">0.1.2</h3>
+<ul>
+<li>Fix: CSV parsing issues (TextJa display, $Name hover).</li>
+<li>Doc: Updated license attribution.</li>
+</ul>
+
+</section>
+</section>
+<section id="acknowledgments" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgments">Acknowledgments</h2>
+<p>The data used in this extension (reserved word, operators, functions and attributes) is adapted from <a href="https://atbref.com/">A Tinderbox Reference File (‘aTbRef’)</a> by Mark Anderson, which is licensed under a <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>. Modifications were made to format the data for this LSP server.</p>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

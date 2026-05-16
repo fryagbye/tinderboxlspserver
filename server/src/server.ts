@@ -38,7 +38,9 @@ import {
     DocumentHighlightParams,
     WorkspaceSymbolParams,
     SymbolInformation,
-    Position
+    Position,
+    DiagnosticTag,
+    FormattingOptions
 } from 'vscode-languageserver/node';
 
 import {
@@ -377,12 +379,94 @@ documents.onDidClose(e => {
 connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
     const { textDocument, options } = params;
     const doc = documents.get(textDocument.uri);
-    if (!doc || doc.languageId === 'tinderbox-export-code') {
-        // Disable whole-document formatting for Export Code to avoid messing up HTML/Template layout.
-        return [];
-    }
+    if (!doc) return [];
 
     const text = doc.getText();
+
+    if (doc.languageId === 'tinderbox-export-code') {
+        // Intelligent Formatting for Export Code: Only format content inside ^...^ tags
+        const edits: TextEdit[] = [];
+        const findExportTags = (input: string) => {
+            const results: { start: number, end: number, content: string }[] = [];
+            let i = 0;
+            while (i < input.length) {
+                if (input[i] === '^') {
+                    const start = i;
+                    i++;
+                    let tagName = '';
+                    while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
+                        tagName += input[i];
+                        i++;
+                    }
+                    if (tagName === '') continue;
+
+                    if (i < input.length && input[i] === '(') {
+                        const contentStart = i + 1;
+                        let depth = 1;
+                        i++;
+                        let inString: string | null = null;
+                        while (i < input.length) {
+                            const char = input[i];
+                            if (inString) {
+                                if (char === inString) inString = null;
+                            } else if (char === '"' || char === "'") {
+                                inString = char;
+                            } else if (char === '(') {
+                                depth++;
+                            } else if (char === ')') {
+                                depth--;
+                            }
+
+                            if (depth === 0 && !inString) {
+                                if (i + 1 < input.length && input[i + 1] === '^') {
+                                    results.push({
+                                        start: contentStart,
+                                        end: i,
+                                        content: input.substring(contentStart, i)
+                                    });
+                                    i += 2;
+                                    break;
+                                } else {
+                                    break;
+                                }
+                            }
+                            i++;
+                        }
+                    } else if (i < input.length && input[i] === '^') {
+                        i++;
+                    }
+                } else {
+                    i++;
+                }
+            }
+            return results;
+        };
+
+        const tags = findExportTags(text);
+        for (const tag of tags) {
+            if (tag.content.trim().length > 0) {
+                const formatted = formatActionCode(tag.content, options);
+                if (formatted.trim() !== tag.content.trim()) {
+                    edits.push(TextEdit.replace(
+                        Range.create(doc.positionAt(tag.start), doc.positionAt(tag.end)),
+                        formatted.trim()
+                    ));
+                }
+            }
+        }
+        return edits;
+    }
+
+    const formatted = formatActionCode(text, options);
+    return [
+        TextEdit.replace(
+            Range.create(doc.positionAt(0), doc.positionAt(text.length)),
+            formatted
+        )
+    ];
+});
+
+function formatActionCode(text: string, options: FormattingOptions): string {
     const lines = text.split(/\r?\n/);
     const indentSize = options.tabSize || 4;
     const indentChar = options.insertSpaces ? ' '.repeat(indentSize) : '\t';
@@ -535,13 +619,8 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
         }
     }
 
-    return [
-        TextEdit.replace(
-            Range.create(doc.positionAt(0), doc.positionAt(text.length)),
-            newLines.join('\n')
-        )
-    ];
-});
+    return newLines.join('\n');
+}
 
 connection.onDocumentSymbol(async (params: DocumentSymbolParams): Promise<DocumentSymbol[]> => {
     await resourcesPromise;
@@ -701,17 +780,17 @@ connection.onRenameRequest(async (params: RenameParams): Promise<WorkspaceEdit |
     if (!doc) return null;
 
     const offset = doc.offsetAt(position);
-    const locations = getReferenceLocations(doc, offset);
+    const locations = await getReferenceLocations(doc, offset);
 
     if (!locations || locations.length === 0) return null;
 
-    const edits: TextEdit[] = locations.map(loc => TextEdit.replace(loc.range, newName));
+    const changes: { [uri: string]: TextEdit[] } = {};
+    locations.forEach(loc => {
+        if (!changes[loc.uri]) changes[loc.uri] = [];
+        changes[loc.uri].push(TextEdit.replace(loc.range, newName));
+    });
 
-    return {
-        changes: {
-            [textDocument.uri]: edits
-        }
-    };
+    return { changes };
 });
 
 connection.languages.inlayHint.on(async (params: InlayHintParams): Promise<InlayHint[]> => {
@@ -1288,6 +1367,69 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 }
             }
         }
+    // --- 5. Unused and Duplicate Symbol Detection ---
+    const localUsage = new Map<string, { pos: Position, length: number, used: boolean, kind: 'variable' | 'parameter' }>();
+    const funcUsage = new Map<string, { pos: Position, length: number, count: number }>();
+    const declaredFuncsInFile = new Set<string>();
+
+    // Pass 1: Gather definitions and all usages
+    const tokens = tokenize(text);
+    for (let k = 0; k < tokens.length; k++) {
+        const t = tokens[k];
+        if (t.type === 'Keyword' && t.value === 'function') {
+            // function name detection
+            let m = k + 1;
+            while (m < tokens.length && tokens[m].type === 'Whitespace') m++;
+            if (m < tokens.length && tokens[m].type === 'Identifier') {
+                const name = tokens[m].value;
+                if (declaredFuncsInFile.has(name)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Warning,
+                        range: Range.create(textDocument.positionAt(tokens[m].start), textDocument.positionAt(tokens[m].start + tokens[m].length)),
+                        message: `Duplicate function definition: '${name}' is already defined in this file.`,
+                        source: 'Tinderbox Action Code'
+                    });
+                }
+                declaredFuncsInFile.add(name);
+                funcUsage.set(name, { pos: textDocument.positionAt(tokens[m].start), length: name.length, count: 0 });
+            }
+        } else if (t.type === 'Keyword' && t.value === 'var') {
+            // var Name
+            let m = k + 1;
+            while (m < tokens.length && (tokens[m].type === 'Whitespace' || tokens[m].value === ':')) m++; // Skip :type too
+            if (m < tokens.length && tokens[m].type === 'Identifier') {
+                localUsage.set(tokens[m].value, { pos: textDocument.positionAt(tokens[m].start), length: tokens[m].value.length, used: false, kind: 'variable' });
+            }
+        } else if (t.type === 'Identifier') {
+            // Usage?
+            if (localUsage.has(t.value)) {
+                // Check if it's NOT the definition
+                const def = localUsage.get(t.value)!;
+                if (textDocument.offsetAt(def.pos) !== t.start) {
+                    def.used = true;
+                }
+            }
+            if (funcUsage.has(t.value)) {
+                const def = funcUsage.get(t.value)!;
+                if (textDocument.offsetAt(def.pos) !== t.start) {
+                    def.count++;
+                }
+            }
+        }
+    }
+
+    // Generate Unused Diagnostics
+    for (const [name, def] of localUsage.entries()) {
+        if (!def.used) {
+            diagnostics.push({
+                severity: DiagnosticSeverity.Hint,
+                range: Range.create(def.pos, { line: def.pos.line, character: def.pos.character + def.length }),
+                message: `Unused ${def.kind}: '${name}'`,
+                tags: [DiagnosticTag.Unnecessary],
+                source: 'Tinderbox Action Code'
+            });
+        }
+        }
     }
 
     return diagnostics;
@@ -1447,9 +1589,26 @@ function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-connection.onDidChangeWatchedFiles(_change => {
-    // Monitored files have change in VSCode
-    connection.console.log('We received an file change event');
+const workspaceFiles = new Set<string>();
+
+connection.onDidChangeWatchedFiles(async _change => {
+    // Re-scan workspace if files are added/deleted
+    for (const event of _change.changes) {
+        const uri = event.uri;
+        if (event.type === 1) { // Created
+            workspaceFiles.add(uri);
+            try {
+                const docText = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
+                const doc = TextDocument.create(uri, 'tinderbox-action-code', 0, docText);
+                const symbols = extractSymbolsFromText(docText, uri, doc);
+                if (symbols.length > 0) workspaceSymbolCache.set(uri, symbols);
+            } catch (e) {}
+        } else if (event.type === 3) { // Deleted
+            workspaceFiles.delete(uri);
+            workspaceSymbolCache.delete(uri);
+        }
+    }
+    rebuildUserFunctionNameCache();
 });
 
 // Load keywords from file
@@ -3396,7 +3555,7 @@ function tokenize(text: string): Token[] {
     return tokens;
 }
 
-function getReferenceLocations(doc: TextDocument, offset: number): Location[] {
+async function getReferenceLocations(doc: TextDocument, offset: number): Promise<Location[]> {
     const text = doc.getText();
     const tokens = tokenize(text);
 
@@ -3449,14 +3608,30 @@ function getReferenceLocations(doc: TextDocument, offset: number): Location[] {
         if (t.type === 'Identifier' && t.value === targetName) {
             if (t.start >= searchStart && t.start + t.length <= searchEnd) {
                 references.push(
-                    Location.create(doc.uri, {
-                        start: doc.positionAt(t.start),
-                        end: doc.positionAt(t.start + t.length)
-                    })
+                    Location.create(doc.uri, Range.create(doc.positionAt(t.start), doc.positionAt(t.start + t.length)))
                 );
             }
         }
     }
+    // Workspace search for global symbols
+    if (!isLocal && allUserFunctionNames.has(targetName)) {
+        for (const uri of workspaceFiles) {
+            if (uri === doc.uri) continue;
+            try {
+                const content = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
+                if (content.includes(targetName)) {
+                    const otherTokens = tokenize(content);
+                    const otherDoc = TextDocument.create(uri, 'tinderbox-action-code', 0, content);
+                    otherTokens.forEach(t => {
+                        if (t.value === targetName) {
+                            references.push(Location.create(uri, Range.create(otherDoc.positionAt(t.start), otherDoc.positionAt(t.start + t.length))));
+                        }
+                    });
+                }
+            } catch (e) {}
+        }
+    }
+
     return references;
 }
 
@@ -3465,7 +3640,7 @@ connection.onReferences(async (params: ReferenceParams): Promise<Location[] | nu
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
 
-    return getReferenceLocations(doc, doc.offsetAt(params.position));
+    return await getReferenceLocations(doc, doc.offsetAt(params.position));
 });
 
 connection.onDocumentHighlight(async (params: DocumentHighlightParams): Promise<DocumentHighlight[] | null> => {
@@ -3473,10 +3648,10 @@ connection.onDocumentHighlight(async (params: DocumentHighlightParams): Promise<
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
 
-    const locations = getReferenceLocations(doc, doc.offsetAt(params.position));
+    const locations = await getReferenceLocations(doc, doc.offsetAt(params.position));
     if (!locations) return null;
 
-    return locations.map(loc => ({
+    return locations.filter(loc => loc.uri === doc.uri).map(loc => ({
         range: loc.range,
         kind: DocumentHighlightKind.Text
     }));

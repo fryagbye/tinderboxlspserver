@@ -103,6 +103,21 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.4.7
+- **Feature**: **Intelligent Export Code Formatting**: Support for formatting Action Code inside `^...^` tags in `.tbxe` files while preserving the surrounding template structure.
+- **Feature**: **Type Inference Inlay Hints**: Automatically displays inferred types for variables (e.g., `var vName:string`) when types are not explicitly declared.
+
+### 0.4.6
+- **Feature**: **Duplicate Function Detection**: Warns if a function name is already defined within the same file or elsewhere in the workspace.
+
+### 0.4.5
+- **Feature**: **Unused Symbol Detection**: Automatically highlights unused local variables, parameters, and global functions.
+
+### 0.4.4
+- **Feature**: **Workspace-wide Symbol Rename**: Rename functions and variables across all workspace files.
+- **Feature**: **Workspace-wide Find All References**: Find all usages of a symbol across the entire workspace.
+- **Feature**: **File Watcher**: Background monitoring for workspace file changes to keep caches up-to-date.
+
 ### 0.4.3
 - **Feature**: **Automatic Theme Color Support**: Integrated default semantic token scopes into the package to automatically adjust colors for dark and light themes.
 - **Improvement**: Refined token assignments for built-in functions (`method`), system attributes (`property`), and user functions (`function`) to maximize color variety.

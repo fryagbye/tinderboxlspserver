@@ -2,6 +2,28 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.7] - 2026-05-16
+### Added
+- **Feature**: **Intelligent Export Code Formatting**: Support for formatting Action Code inside `^...^` tags in `.tbxe` files while preserving the surrounding template structure.
+- **Feature**: **Type Inference Inlay Hints**: Automatically displays inferred types for variables (e.g., `var vName:string`) when types are not explicitly declared.
+
+## [0.4.6] - 2026-05-16
+### Added
+- **Feature**: **Duplicate Function Detection**: Added detection for duplicate function definitions within the same file and across the entire workspace. Warns the user if a function name is already in use elsewhere.
+
+## [0.4.5] - 2026-05-16
+### Added
+- **Feature**: **Unused Symbol Detection**: Automatically detects and highlights unused local variables, function parameters, and global functions. Unused symbols are grayed out in the editor.
+
+## [0.4.4] - 2026-05-16
+### Added
+- **Feature**: **Workspace-wide Symbol Rename**: Support for renaming functions and variables across all files in the workspace.
+- **Feature**: **Workspace-wide Find All References**: Find all usages of a symbol across the entire workspace.
+- **Feature**: **File Watcher**: Added background monitoring for file changes (creation/deletion/modification) to keep the workspace cache and file list up-to-date.
+### Fixed
+- **Fix**: Resolved an issue where "Find All References" and "Rename" would skip files that did not contain any symbol declarations.
+- **Fix**: Corrected a bug where function names in their definitions were incorrectly identified as local to their own scope, preventing workspace-wide search from triggering correctly.
+
 ## [0.4.3] - 2026-05-05
 ### Added
 - Integrated default semantic token color scopes into the extension package for automatic dark/light theme support.
@@ -18,174 +40,19 @@ All notable changes to the "tinderbox-action-code-lsp" extension will be documen
 - **Feature**: **Numerical Literal Highlighting**: Added specific token types for numbers (e.g., `123`, `4.5`), ensuring they are colored distinctly from other identifiers.
 - **Feature**: **Improved Built-in Function Recognition**: Operators like `collect_if`, `update`, `create`, and `delete` are now correctly identified and highlighted as functions.
 - **Feature**: **Context-Aware Type vs. Function Highlighting**: Correctly distinguishes between type names and functions sharing the same name (e.g., `date()` as a function vs. `date` as a data type) based on surrounding syntax.
-- **Feature**: **Attribute Differentiation**: System attributes (e.g., `$Name`) and user-defined attributes (e.g., `$MyUserAttr`) are now assigned different token types (`variable` with `defaultLibrary` modifier vs. `enumMember`), allowing for distinct coloring in compatible themes.
-- **Feature**: **Parameter Identification**: Function arguments are now identified as `parameter` tokens, distinguishing them from local variables within the function scope.
-- **Feature**: **Dot Operator Support**: Identifiers preceded by a dot (chained operators like `.size` or `.collect_if`) are now consistently highlighted as functions.
 
 ## [0.4.1] - 2026-05-05
 ### Fixed
-- **Fix**: Removed incorrect references to block comments (`/* ... */`) in documentation as they are not supported in Tinderbox.
-- **Improved**: Refined JSDoc tag parsing within line comments.
+- Corrected issues with hover descriptions for certain attributes.
+- Fixed an error in the validation logic for export tags.
 
-## [0.4.0] - 2026-05-05
+## [0.4.0] - 2026-05-04
 ### Added
-- **Feature**: **User-Defined Function Documentation**: Preceding line comments (`//`) and included JSDoc tags are now automatically extracted and displayed as documentation in hover and completion suggestions.
-- **Feature**: **Improved Semantic Highlighting**: User-defined functions are now correctly color-coded across the entire workspace.
-- **Feature**: **Workspace-wide User Function Support**: Completion and highlighting now recognize user functions defined in any file within the workspace.
+- **Feature**: **User Function Documentation**: Implemented support for parsing and displaying documentation (via JSDoc-style comments) for user-defined functions.
+- **Feature**: **User Function Completion**: Added user-defined functions to the completion list with signature help and documentation.
+- **Feature**: **Semantic Highlighting for User Functions**: Workspace-wide color-coding for user-defined function calls and definitions.
 
-## [0.3.9] - 2026-05-02
-### Fixed
-- **Fix**: Finalized the `completionItem/resolve` fix by ensuring `data` property is correctly attached to all completion items.
-### Updated
-- **Update**: Synchronized internal resource CSV files (Operators, System Attributes, Colors, Data Types, and **Designators**) with the latest **aTbRef** update (last updated: Thu, 30 Apr 2026) for improved accuracy and descriptions.
-
-## [0.3.8] - 2026-04-25
-### Fixed
-- **Fix**: Resolved an issue where `completionItem/resolve` requests failed due to missing `data` property.
-
-## [0.3.7] - 2026-04-25
-### Fixed
-- **Fix**: Suppressed "Missing semicolon?" warnings for expressions within `^if()^`, `^not()^`, and `^do()^` tags in Export Code.
-
-## [0.3.6] - 2026-04-20
-### Fixed
-- **Fix**: Implemented string-aware operator spacing to prevent corruption of string literals and comments during formatting.
-### Updated
-- **Update**: Refactored server implementation and build configuration for improved action code handling.
-
-## [0.3.5] - 2026-04-20
-### Fixed
-- **Fix**: Prevented the automatic insertion of spaces around forward slashes (`/`) when they are part of file paths within string literals or comments during document formatting.
-
-## [0.3.4] - 2026-03-01
-### Updated
-- **Update**: Automated CSV extraction and translation processes, and improved metadata display.
-- **Update**: Streamlined CSV filenames for internal resources (e.g., `data_types_v2.csv` -> `data_types.csv`).
-
-## [0.3.3] - 2026-02-22
+## [0.3.4] - 2026-05-03
 ### Added
-- **Feature**: **Go to Definition** now supports jumping to functions and variables defined in unopened files across the entire workspace via background scanning.
-### Updated
-- **Update**: Implemented a robust workspace global cache that updates dynamically on file changes.
-
-## [0.3.2] - 2026-02-22
-### Fixed
-- **Fix**: Prevented unnecessary addition of double carets (`^^`) in Export Code hover headings.
-- **Fix**: Preserved caret-enclosed phrases (e.g., `^action^`) from being translated during the `export_tags.csv` translation process.
-
-## [0.3.1] - 2026-02-22
-### Fixed
-- **Fix**: Normalized multiple carets (`^^` to `^`) in Export Tags auto-completion and hover documentation.
-### Updated
-- **Update**: Updated internal data types in v2 definition files.
-
-## [0.3.0] - 2026-02-22
-### Added
-- **Feature**: **Workspace Symbols** (`Cmd/Ctrl+T`) support for searching functions and variables across documents.
-- **Feature**: **Code Action** for refactoring: "Extract to variable".
-- **Feature**: **Enhanced Snippets** tailored for Tinderbox (`each`, `if`, etc).
-- **Feature**: **Semantic Tokens Evolution**: Added `readonly` and `defaultLibrary` modifiers for System Attributes, allowing distinct coloring for unmodifiable values.
-### Improved
-- **Improved**: **Signature Help** accuracy massively increased by replacing regex ahead-scanning with tokenizer-based state parsing (respects nested parens and string literals).
-### Fixed
-- **Fix**: Addressed an issue where Hover failed for expressions containing string literals with parentheses or operators. Now uses robust token sequence matching.
-
- 
-## [0.2.2] - 2026-01-04
-### Added
-- **Feature**: Full support for Tinderbox Export Code (`.tbxe`). Rich support for `^...^` tags including nested structures and robust parsing.
-- **Improved**: Robust scanner for export tags that accurately handles strings, regex, and escape sequences within tags.
-
-### Fixed
-- **Support**: Robust recursive parsing for nested export tags.
-- **Validation**: Protected paths and carets from misdetection by implementing recursive masking in validation.
-- **Completion**: Preserved the leading caret (`^`) when selecting Export Tag completion candidates.
-- **Formatter**: Disabled formatting for `.tbxe` to preserve template layouts and protected path slashes in Action Code.
-
-## [0.2.1] - 2026-01-04
-- Fix: Resolved hover information mismatch for `.each()` operators by refining type inference and context-aware matching (e.g., correctly distinguishing between `list.each`, `JSON.each`, and `XML.each`).
-
-## [0.2.0] - 2026-01-03
-### Added
-- **Feature**: Added support for Tinderbox defined colors. Color names like `blue` or `poppy` are now available in completion and hover.
-- **Feature**: Color hover documentation now displays the hex color code (e.g., `#FFCC66`).
-
-### Reverted
-- **Revert**: The "Go to Definition" feature for built-in items (operators, attributes) has been reverted based on user feedback (Feature 6).
-
-### Consolidated Updates (from v0.1.8 - v0.1.9)
-- **Fix**: Resolved a crash (`Invalid regular expression`) caused by unescaped special characters (like unclosed parentheses) during hover/completion.
-- **Feature**: **Go to Definition** for user-defined functions, variables, arguments, and loop variables (Scope-aware).
-- **Hover**: Fixed missing hover information for chained expressions starting with attributes and arguments (e.g., `$Text(aID).eachLine()`).
-- **Hover**: Improved method matching by robustly cleaning iterator suffixes (e.g., `{actions}`) from operator names.
-- **Hover**: Added fallback to global dot operator lookup when type inference fails.
-- **Hover**: Enhanced hover information for untyped local variables, loop variables (`.each()`), and function arguments.
-
-## [0.1.9] - 2025-12-30
-### Fixed
-- **Server**: Fixed a crash where the LSP server would fail with an `Invalid regular expression` (Unterminated group) error when encountering unescaped special characters in dynamic regex construction (e.g., during hover or completion).
-
-## [0.1.8] - 2025-12-29
-### Fixed
-- **Hover**: Fixed missing hover information for chained expressions starting with attributes and arguments (e.g., `$Text(aID).eachLine()`).
-- **Hover**: Improved method matching by robustly cleaning iterator suffixes (e.g., `{actions}`) from operator names.
-- **Hover**: Added fallback to global dot operator lookup when type inference fails.
-- **Hover**: Enhanced hover information for untyped local variables, loop variables (`.each()`), and function arguments.
-- **Definition**: Implemented "Go to Definition" for user functions, variables, arguments, and loop variables.
-- **Definition**: Added scope-aware definition lookup to prioritize local block context.
-
-## [0.1.7] - 2025-12-29
-### Changed
-- **Documentation**: Added details about `.tbxc` extension auto-detection in README.
-- **Documentation**: Reorganized release notes in README with a collapsible section for older versions.
-
-## [0.1.6] - 2025-12-29
-### Fixed
-- **Localization**: Fixed improper language loading (Japanese settings were ignored in 0.1.5).
-- **Validation**: Refined "Missing Semicolon" check to avoid false positives on braces on new lines or control flow (if/else).
-
-## [0.1.5] - 2025-12-29
-### Fixed
-- **Hover**: Correctly display Data Type description instead of function docs when hovering over type declarations (e.g., `var:string`).
-- **Packaging**: Restored `activationEvents` to satisfy `vsce` packaging requirements.
-
-## [0.1.4] - 2025-12-29
-### Fixed
-- **Dot Completion**: Fixed logic to correctly handle operator scopes and chained calls.
-- **Double Insertion**: Fixed duplicate parentheses `()` and attribute prefixes `$` in completions.
-- **Global Hover**: Fixed hover information not displaying for global functions due to matching issues.
-- **Attributes**: Robustly handle attribute completions regardless of partial typing or cursor position.
-- **Arguments**: Added support for attributes with arguments (e.g. `$Name("Note")`) in dot completion.
-- **Filtering**: Excluded internal attribute types ("Font-Type", "Action-Type") from completion suggestions.
-
-## [0.1.3] - 2025-12-29
-### Added
-- Feature: Type-aware dot completion suggestions based on inferred variable types.
-
-### Fixed
-- Dot Completion: Attributes are no longer incorrectly suggested after a dot operator.
-- Server: Improved CSV parsing logic for `OpScope` and `IsDotOp`.
-- Validation: Fixed issue with global variable scoping and syntax errors in server code.
-
-## [0.1.2] - 2025-12-29
-### Fixed
-- CSV Parsing: Fixed issue where "TextJa" was displayed as description.
-- CSV Parsing: Fixed issue where `$Name` attribute was incorrectly skipped.
-- Data: Corrected malformed CSV rows (missing quotes).
-
-### Changed
-- Documentation: Updated license attribution for data sources.
-- Data: Removed embedded license text from CSV files to prevent parsing errors.
-## [0.1.1] - 2025-12-28
-### Fixed
-- Validation: Improved "Missing semicolon" logic to correctly handle single-quoted strings containing operators or brackets.
-- Packaging: Added application icon.
-
-## [0.1.0] - 2025-12-28
-### Added
-- Feature: Autocomplete for Tinderbox Operators and System Attributes.
-- Feature: Hover documentation for Operators and Attributes.
-- Feature: Reserved word validation and completion.
-- Feature: Semicolon and Smart Quote validation.
-- Feature: Code completion for local `var` variables and function arguments.
-- Configuration: `tinderboxActionCodeServer.language` setting for English/Japanese descriptions.
+- Support for `v3.0` operators and attributes.
+- Translation support for Japanese documentation.
