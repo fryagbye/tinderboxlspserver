@@ -6,3 +6,5 @@ test.adc
 __pycache__/
 *.py[cod]
 *$py.class
+*.vsix
+

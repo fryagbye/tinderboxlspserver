@@ -49,34 +49,80 @@
       {
         "language": "tinderbox-action-code",
         "scopes": {
-          "method": ["entity.name.function.member"],
-          "function": ["entity.name.function"],
-          "property": ["variable.other.property"],
-          "parameter": ["variable.parameter"],
-          "variable": ["variable.other.readwrite"],
-          "enumMember": ["variable.other.enummember"],
-          "type": ["entity.name.type"],
-          "keyword": ["keyword.control"],
-          "number": ["constant.numeric"],
-          "string": ["string.quoted.double"],
-          "comment": ["comment.line.double-slash"]
+          "method": [
+            "entity.name.function.member"
+          ],
+          "function": [
+            "entity.name.function"
+          ],
+          "property": [
+            "variable.other.property"
+          ],
+          "parameter": [
+            "variable.parameter"
+          ],
+          "variable": [
+            "variable.other.readwrite"
+          ],
+          "enumMember": [
+            "variable.other.enummember"
+          ],
+          "type": [
+            "entity.name.type"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "string": [
+            "string.quoted.double"
+          ],
+          "comment": [
+            "comment.line.double-slash"
+          ]
         }
       },
       {
         "language": "tinderbox-export-code",
         "scopes": {
-          "method": ["entity.name.function.member"],
-          "function": ["entity.name.function"],
-          "property": ["variable.other.property"],
-          "parameter": ["variable.parameter"],
-          "variable": ["variable.other.readwrite"],
-          "enumMember": ["variable.other.enummember"],
-          "type": ["entity.name.type"],
-          "keyword": ["keyword.control"],
-          "number": ["constant.numeric"],
-          "string": ["string.quoted.double"],
-          "comment": ["comment.line.double-slash"],
-          "macro": ["keyword.control.macro"]
+          "method": [
+            "entity.name.function.member"
+          ],
+          "function": [
+            "entity.name.function"
+          ],
+          "property": [
+            "variable.other.property"
+          ],
+          "parameter": [
+            "variable.parameter"
+          ],
+          "variable": [
+            "variable.other.readwrite"
+          ],
+          "enumMember": [
+            "variable.other.enummember"
+          ],
+          "type": [
+            "entity.name.type"
+          ],
+          "keyword": [
+            "keyword.control"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "string": [
+            "string.quoted.double"
+          ],
+          "comment": [
+            "comment.line.double-slash"
+          ],
+          "macro": [
+            "keyword.control.macro"
+          ]
         }
       }
     ],
@@ -102,16 +148,19 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && node esbuild.js --production",
     "compile": "tsc -b",
     "watch": "tsc -b -w",
     "postinstall": "cd client && npm install && cd ../server && npm install",
+    "esbuild-compile": "node esbuild.js",
+    "esbuild-watch": "node esbuild.js --watch",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.75.0",
-    "typescript": "^5.0.0",
-    "@vscode/vsce": "^2.19.0"
+    "@vscode/vsce": "^2.19.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.0.0"
   }
 }

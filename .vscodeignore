@@ -17,3 +17,15 @@ client/tsconfig.json
 tinderboxlsp.code-workspace
 test.adc
 test_format.tbxc
+test.tbxa
+test.tbxe
+test_format.tbxa
+**/*.vsix
+node_modules/**
+client/node_modules/**
+server/node_modules/**
+esbuild.js
+*.py
+images/**
+README_files/**
+README.html
