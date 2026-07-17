@@ -104,6 +104,9 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
+### 0.4.10
+- **Resource Update**: Synchronized internal resources (Operators, Attributes, Designators, Colors, Export Tags, Data Types) with the latest **aTbRef** extracted from `aTbRef-11.tbx` (2026-07-17) and updated Japanese translations.
+
 ### 0.4.9
 - **Feature**: **Call Hierarchy**: Support for viewing incoming and outgoing calls for user-defined functions across the workspace.
 - **Feature**: **Extract to Function**: Select a block of code and extract it into a new function definition with automatic parameter detection.

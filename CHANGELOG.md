@@ -2,6 +2,10 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.10] - 2026-07-17
+### Changed
+- **Resource**: Updated CSV resource files (attributes, operators, designators, data types, colors, export tags) extracted from `aTbRef-11.tbx` and added Japanese translations.
+
 ## [0.4.9] - 2026-05-16
 ### Added
 - **Code Action**: Added "Extract to Function" refactoring.
