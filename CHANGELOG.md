@@ -2,6 +2,11 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.11] - 2026-07-17
+### Added
+- **Build**: Integrated `esbuild` for extension bundling, significantly shrinking package size and load latency.
+- **Config**: Optimized `.vscodeignore` to exclude unnecessary development and testing files (e.g. node_modules, build outputs, python scripts).
+
 ## [0.4.10] - 2026-07-17
 ### Changed
 - **Resource**: Updated CSV resource files (attributes, operators, designators, data types, colors, export tags) extracted from `aTbRef-11.tbx` and added Japanese translations.
