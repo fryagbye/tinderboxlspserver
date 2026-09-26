@@ -3,6 +3,7 @@
 src/**
 test/**
 **/*.ts
+**/*.tsbuildinfo
 **/*.map
 .gitignore
 tsconfig.json
@@ -13,6 +14,8 @@ server/tsconfig.json
 client/src/**
 client/tsconfig.json
 .agent/**
+.devin/**
+gemini.md
 .nvimlog
 tinderboxlsp.code-workspace
 test.adc

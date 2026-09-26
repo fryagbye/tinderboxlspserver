@@ -1,6 +1,11 @@
 node_modules/
 **/node_modules/
 test.adc
+.nvimlog
+.DS_Store
+**/.DS_Store
+out/
+**/out/
 
 # Python
 __pycache__/

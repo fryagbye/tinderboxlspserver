@@ -37,7 +37,7 @@ A Language Server Protocol (LSP) implementation for Tinderbox Action Code, provi
 - **Call Hierarchy**: Display incoming and outgoing calls for user-defined functions in a tree-like view to understand complex logic.
 
 ### 5. Advanced Assistance
-- **Signature Help**: Intelligent parameter tracking that correctly counts arguments even through nested parentheses and commas inside strings, highlighting the current parameter you are typing.
+- **Signature Help**: Intelligent parameter tracking that correctly counts arguments even through nested parentheses and commas inside strings, highlighting the current parameter you are typing. Works for both built-in operators/designators and user-defined functions.
 - **Semantic Tokens**: Dynamic modifier assignment. Read-only system attributes receive a `readonly` modifier, and built-in attributes receive `defaultLibrary`, allowing for more precise semantic highlighting in compatible themes.
 - **Code Actions**: Select an expression within a line and use Quick Fix (`Cmd + .`) to "Extract to variable". It automatically inserts a `var:string` definition while preserving indentation. **You can also select a block of code and select "Extract to function" to create a new function definition and replace the selection with a call.**
 - **Enhanced Snippets**: Included control flow snippets specifically for Tinderbox, such as `each`, `if` and `ifelse` blocks.
@@ -96,13 +96,21 @@ The extension automatically recognizes the following file types:
 If you are working with other file types (like `.txt`), you can manually set the language mode to **Tinderbox Action Code** or **Tinderbox Export Code** via the Language Mode selector in the VS Code status bar.
 
 ## Requirements
-- VS Code 1.75.0 or higher.
+- VS Code 1.82.0 or higher.
 
 
 ## Known Issues
 - While the parser now utilizes a robust token-based approach for high-level language features (such as hover and signature help), some structural validation checks may occasionally be tricked by extremely complex or irregular nested structures.
 
 ## Release Notes
+
+### 0.4.12
+- **Security**: File access is now confined to `file:` URIs inside workspace folders (or open documents), and workspace scanning is bounded (depth/file-count/size limits; `node_modules` and build outputs are skipped).
+- **Fix**: Duplicate diagnostics for unused variables/duplicate functions, and type mismatch detection that never fired.
+- **Fix**: Typed declarations (`var:string s`) no longer flag the type name as an unused variable; strings and comments no longer trigger false-positive diagnostics.
+- **Fix**: Unterminated strings no longer swallow subsequent lines; inlay hints handle nested parentheses and skip function declarations; signature help resolves user-defined functions.
+- **Fix**: The file watcher now actually watches `*.tbxa`/`*.tbxe`/`*.tbxc` files and reacts to modifications; `maxNumberOfProblems` is enforced.
+- **Changed**: Minimum VS Code version is now 1.82.0; unsaved (untitled) documents are supported.
 
 ### 0.4.11
 - **Feature**: Bundled client and server with `esbuild`, reducing the packaged extension size from ~2.8 MB to ~950 KB and optimizing load time.

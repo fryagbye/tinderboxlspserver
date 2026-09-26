@@ -23,3 +23,20 @@ $MyList.each(vCounter) {
 // vDataをRenme (F2) するとどこが変わるか
 // vCounter の「すべての参照の検索」
 // processData の「定義へ移動」をお試しください！
+// Reflection Objects should already have their $Prototype set
+// However, ad hoc additions of notes and adornments in a Diagram
+// will not have prototype assignments, so these are made here.
+if($Prototype != "Reflection Object")
+{ if($IsAdornment)
+{ $Prototype = "Diagram Adornment";
+} else
+{ $Prototype = "Diagram Object";
+};
+};
+// Every child note of a Diagram Container needs this absolute
+// reference to its parent to allow updating of reflections
+// and other [future] diagram maintenance procedures.
+$Diagram_ID = $ID(parent);
+// Setting $Text is for debugging purposes; it can be removed.
+$Text = $Text.paragraph(0).trim;
+$Text += "Path to reflected note: " + $Path;

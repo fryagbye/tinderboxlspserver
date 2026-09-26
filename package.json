@@ -5,7 +5,7 @@
   "author": "fryagbye",
   "icon": "icon.png",
   "license": "MIT",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "publisher": "fryagbye",
   "repository": {
     "type": "git",
@@ -13,7 +13,7 @@
   },
   "private": false,
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Programming Languages"
@@ -158,7 +158,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
-    "@types/vscode": "^1.75.0",
+    "@types/vscode": "^1.82.0",
     "@vscode/vsce": "^2.19.0",
     "esbuild": "^0.28.1",
     "typescript": "^5.0.0"

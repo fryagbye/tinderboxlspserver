@@ -2,6 +2,31 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
+## [0.4.12] - 2026-09-26
+### Security
+- File access is now restricted to `file:` URIs inside registered workspace folders (or documents open in the editor). Non-file schemes and malformed URIs are rejected instead of being resolved to arbitrary filesystem paths.
+- Workspace scanning is bounded (maximum depth 20, 5,000 files, 5 MB per file) and skips `node_modules`, `.git`, and build output directories to avoid excessive resource usage on large folders.
+- Export tag recursion is capped at depth 50 so pathological input cannot exhaust the call stack.
+
+### Fixed
+- **Fix**: Duplicate diagnostics for unused variables and duplicate functions. The unused-symbol detection pass was accidentally nested inside the assignment loop and ran once per assignment.
+- **Fix**: Type mismatch diagnostics never fired because the type compatibility check always reported types as compatible. Known incompatible primitive assignments (e.g., a string assigned to a number attribute) are now flagged.
+- **Fix**: Typed declarations such as `var:string s` incorrectly reported the type name (`string`) as an unused variable.
+- **Fix**: Validation checks no longer produce false positives for code inside strings and comments; declaration, assignment, and symbol checks now run on masked text.
+- **Fix**: Unterminated string literals no longer consume the rest of the document during tokenization.
+- **Fix**: Inlay hints now handle nested parentheses correctly and are no longer shown inside function parameter declarations.
+- **Fix**: Signature help now resolves user-defined functions, not just built-in operators and designators.
+- **Fix**: The file watcher now monitors `**/*.{tbxa,tbxc,tbxe}` instead of the template leftover `**/.clientrc`, and file modification events are handled so workspace caches stay current.
+- **Fix**: Semantic token export-tag detection is now range-based (handles nested tags) instead of fragile caret-parity toggling.
+- **Fix**: The `maxNumberOfProblems` setting is now actually enforced on published diagnostics.
+- **Fix**: Consolidated three divergent export-tag scanners into one shared implementation so validation, hover, and formatting agree on what a tag is.
+- **Fix**: Workspace file contents are cached (with invalidation on file events) so Find All References and Call Hierarchy no longer re-read every file on each request.
+
+### Changed
+- Minimum required VS Code version raised to 1.82.0 (required by `vscode-languageclient` 9.x).
+- The document selector now also covers unsaved (`untitled`) documents.
+- Repository hygiene: removed tracked `node_modules`, `.vsix` artifacts, build outputs, and editor/OS junk from Git; updated `.gitignore` and `.vscodeignore` accordingly.
+
 ## [0.4.11] - 2026-07-17
 ### Added
 - **Build**: Integrated `esbuild` for extension bundling, significantly shrinking package size and load latency.

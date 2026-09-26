@@ -184,6 +184,7 @@ connection.onInitialized(() => {
     if (hasWorkspaceFolderCapability) {
         connection.workspace.getWorkspaceFolders().then(folders => {
             if (folders) {
+                workspaceFolderPaths = folders.map(f => URI.parse(f.uri).fsPath);
                 folders.forEach(folder => {
                     const folderPath = URI.parse(folder.uri).fsPath;
                     scanWorkspace(folderPath);
@@ -193,19 +194,29 @@ connection.onInitialized(() => {
     }
 });
 
-async function scanWorkspace(dirPath: string) {
+// Directories that are never useful to index for Tinderbox code.
+const SCAN_EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'coverage']);
+const MAX_SCAN_DEPTH = 20;
+const MAX_SCAN_FILES = 5000;
+let scannedFileCount = 0;
+
+async function scanWorkspace(dirPath: string, depth: number = 0) {
+    if (depth > MAX_SCAN_DEPTH || scannedFileCount >= MAX_SCAN_FILES) return;
     try {
         const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
         for (const entry of entries) {
-            // Ignore hidden folders (like .git, .vscode)
-            if (entry.isDirectory() && entry.name.startsWith('.')) continue;
+            if (scannedFileCount >= MAX_SCAN_FILES) return;
+            // Ignore hidden folders (like .git, .vscode) and dependency/build dirs
+            if (entry.isDirectory() &&
+                (entry.name.startsWith('.') || SCAN_EXCLUDED_DIRS.has(entry.name))) continue;
 
             const fullPath = path.join(dirPath, entry.name);
             if (entry.isDirectory()) {
-                await scanWorkspace(fullPath);
+                await scanWorkspace(fullPath, depth + 1);
             } else if (entry.isFile()) {
                 const ext = path.extname(entry.name).toLowerCase();
                 if (['.tbxa', '.tbxc', '.tbxe'].includes(ext)) {
+                    scannedFileCount++;
                     await indexFileForCache(fullPath);
                 }
             }
@@ -215,12 +226,23 @@ async function scanWorkspace(dirPath: string) {
     }
 }
 
+const MAX_INDEX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
 async function indexFileForCache(filePath: string) {
     try {
+        const stat = await fs.promises.stat(filePath);
+        if (stat.size > MAX_INDEX_FILE_SIZE) {
+            connection.console.warn(`Skipping large file (>5MB): ${filePath}`);
+            return;
+        }
         const text = await fs.promises.readFile(filePath, 'utf-8');
         const uri = URI.file(filePath).toString();
         workspaceFiles.add(uri);
-        const doc = TextDocument.create(uri, 'tinderbox-action-code', 1, text);
+        workspaceTextCache.set(uri, text);
+        const languageId = path.extname(filePath).toLowerCase() === '.tbxe'
+            ? 'tinderbox-export-code'
+            : 'tinderbox-action-code';
+        const doc = TextDocument.create(uri, languageId, 1, text);
         const symbols = extractSymbolsFromText(text, uri, doc);
 
         if (symbols.length > 0) {
@@ -384,7 +406,7 @@ connection.onDidChangeConfiguration(change => {
         documentSettings.clear();
     } else {
         globalSettings = <TinderboxSettings>(
-            (change.settings.tinderboxActionCodeServer || defaultSettings)
+            (change.settings?.tinderboxActionCodeServer || defaultSettings)
         );
     }
 
@@ -410,7 +432,119 @@ function getDocumentSettings(resource: string): Thenable<TinderboxSettings> {
 // Only keep settings for open documents
 documents.onDidClose(e => {
     documentSettings.delete(e.document.uri);
+    const pending = pendingValidationRequests.get(e.document.uri);
+    if (pending) {
+        clearTimeout(pending);
+        pendingValidationRequests.delete(e.document.uri);
+    }
 });
+
+// --- Shared Export Tag Scanner ---
+// Used by validation, hover and formatting so all of them agree on what a tag is
+// (nested tags, balanced parens, string and escape handling).
+interface ExportTagMatch {
+    tagName: string;
+    tagContent: string;
+    tagStart: number;
+    tagEnd: number;       // offset just past the closing '^'
+    contentStart: number; // -1 for argument-less tags (^name^)
+}
+
+function findExportTags(input: string, baseOffset: number): ExportTagMatch[] {
+    const results: ExportTagMatch[] = [];
+    let i = 0;
+    while (i < input.length) {
+        if (input[i] === '^') {
+            const start = i;
+            i++;
+            // Find tag name
+            let tagName = '';
+            while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
+                tagName += input[i];
+                i++;
+            }
+
+            if (tagName === '') {
+                // Just a caret, skip
+                continue;
+            }
+
+            if (i < input.length && input[i] === '(') {
+                // Potential tag with arguments: ^name(args)^
+                const contentStartIdx = i + 1;
+                let depth = 1;
+                i++;
+                let inString: string | null = null;
+                let isEscaped = false;
+
+                while (i < input.length) {
+                    const char = input[i];
+                    if (isEscaped) {
+                        isEscaped = false;
+                    } else if (char === '\\') {
+                        isEscaped = true;
+                    } else if (inString) {
+                        if (char === inString) {
+                            inString = null;
+                        }
+                    } else if (char === '"' || char === "'") {
+                        inString = char;
+                    } else if (char === '(') {
+                        depth++;
+                    } else if (char === ')') {
+                        depth--;
+                    }
+
+                    if (depth === 0 && !inString) {
+                        if (i + 1 < input.length && input[i + 1] === '^') {
+                            results.push({
+                                tagName,
+                                tagContent: input.substring(contentStartIdx, i),
+                                tagStart: baseOffset + start,
+                                tagEnd: baseOffset + i + 2,
+                                contentStart: baseOffset + contentStartIdx
+                            });
+                            i += 2;
+                            break;
+                        } else {
+                            // Found closing paren but no trailing caret, strictly no match in TBX
+                            break;
+                        }
+                    }
+                    i++;
+                }
+            } else if (i < input.length && input[i] === '^') {
+                // Argument-less tag: ^name^
+                results.push({
+                    tagName,
+                    tagContent: '',
+                    tagStart: baseOffset + start,
+                    tagEnd: baseOffset + i + 1,
+                    contentStart: -1
+                });
+                i++;
+            }
+        } else {
+            i++;
+        }
+    }
+    return results;
+}
+
+// Collect tags recursively (nested tags inside tag content), with a depth cap
+// so pathological input cannot exhaust the call stack.
+const MAX_EXPORT_TAG_DEPTH = 50;
+function collectExportTags(input: string, baseOffset: number, depth: number = 0): ExportTagMatch[] {
+    if (depth >= MAX_EXPORT_TAG_DEPTH) return [];
+    const allTags: ExportTagMatch[] = [];
+    for (const tag of findExportTags(input, baseOffset)) {
+        allTags.push(tag);
+        if (tag.tagContent) {
+            allTags.push(...collectExportTags(tag.tagContent, tag.contentStart, depth + 1));
+        }
+    }
+    return allTags;
+}
 
 connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
     const { textDocument, options } = params;
@@ -422,69 +556,13 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
     if (doc.languageId === 'tinderbox-export-code') {
         // Intelligent Formatting for Export Code: Only format content inside ^...^ tags
         const edits: TextEdit[] = [];
-        const findExportTags = (input: string) => {
-            const results: { start: number, end: number, content: string }[] = [];
-            let i = 0;
-            while (i < input.length) {
-                if (input[i] === '^') {
-                    const start = i;
-                    i++;
-                    let tagName = '';
-                    while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
-                        tagName += input[i];
-                        i++;
-                    }
-                    if (tagName === '') continue;
-
-                    if (i < input.length && input[i] === '(') {
-                        const contentStart = i + 1;
-                        let depth = 1;
-                        i++;
-                        let inString: string | null = null;
-                        while (i < input.length) {
-                            const char = input[i];
-                            if (inString) {
-                                if (char === inString) inString = null;
-                            } else if (char === '"' || char === "'") {
-                                inString = char;
-                            } else if (char === '(') {
-                                depth++;
-                            } else if (char === ')') {
-                                depth--;
-                            }
-
-                            if (depth === 0 && !inString) {
-                                if (i + 1 < input.length && input[i + 1] === '^') {
-                                    results.push({
-                                        start: contentStart,
-                                        end: i,
-                                        content: input.substring(contentStart, i)
-                                    });
-                                    i += 2;
-                                    break;
-                                } else {
-                                    break;
-                                }
-                            }
-                            i++;
-                        }
-                    } else if (i < input.length && input[i] === '^') {
-                        i++;
-                    }
-                } else {
-                    i++;
-                }
-            }
-            return results;
-        };
-
-        const tags = findExportTags(text);
+        const tags = findExportTags(text, 0);
         for (const tag of tags) {
-            if (tag.content.trim().length > 0) {
-                const formatted = formatActionCode(tag.content, options);
-                if (formatted.trim() !== tag.content.trim()) {
+            if (tag.contentStart !== -1 && tag.tagContent.trim().length > 0) {
+                const formatted = formatActionCode(tag.tagContent, options);
+                if (formatted.trim() !== tag.tagContent.trim()) {
                     edits.push(TextEdit.replace(
-                        Range.create(doc.positionAt(tag.start), doc.positionAt(tag.end)),
+                        Range.create(doc.positionAt(tag.contentStart), doc.positionAt(tag.contentStart + tag.tagContent.length)),
                         formatted.trim()
                     ));
                 }
@@ -762,9 +840,8 @@ connection.languages.inlayHint.on(async (params: InlayHintParams): Promise<Inlay
     }
 
     // 2. Find function calls and provide hints
-    const callPattern = /\b([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-    callPattern.lastIndex = 0;
-    while ((match = callPattern.exec(text)) !== null) {
+    const callStartPattern = /\b([a-zA-Z0-9_]+)\s*\(/g;
+    while ((match = callStartPattern.exec(text)) !== null) {
         const funcName = match[1];
 
         // Skip keywords that look like function calls
@@ -772,8 +849,34 @@ connection.languages.inlayHint.on(async (params: InlayHintParams): Promise<Inlay
             continue;
         }
 
-        const argsStr = match[2];
-        const argsStartOffset = match.index + match[0].indexOf('(') + 1;
+        // Skip parameter lists of function definitions (`function name(...)`)
+        const beforeMatch = text.substring(Math.max(0, match.index - 20), match.index);
+        if (/\bfunction\s*$/.test(beforeMatch)) {
+            continue;
+        }
+
+        const openParenIdx = match.index + match[0].length - 1;
+        // Find the matching close paren (nested parens and strings handled)
+        let depth = 1;
+        let j = openParenIdx + 1;
+        let inStr: string | null = null;
+        let escaped = false;
+        while (j < text.length && depth > 0) {
+            const c = text[j];
+            if (escaped) escaped = false;
+            else if (c === '\\') escaped = true;
+            else if (inStr) { if (c === inStr) inStr = null; }
+            else if (c === '"' || c === "'") inStr = c;
+            else if (c === '(') depth++;
+            else if (c === ')') depth--;
+            j++;
+        }
+        if (depth !== 0) break; // unbalanced parens - stop scanning
+
+        const argsStr = text.substring(openParenIdx + 1, j - 1);
+        const argsStartOffset = openParenIdx + 1;
+        // Resume the search inside the arguments so nested calls get hints too
+        callStartPattern.lastIndex = argsStartOffset;
 
         if (functions.has(funcName)) {
             const paramNames = functions.get(funcName)!;
@@ -848,6 +951,7 @@ async function updateDocumentCache(doc: TextDocument) {
     const text = doc.getText();
     const uri = doc.uri;
     workspaceFiles.add(uri);
+    workspaceTextCache.set(uri, text);
     const symbols = extractSymbolsFromText(text, uri, doc);
 
     if (symbols.length > 0) {
@@ -867,107 +971,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
     if (textDocument.languageId === 'tinderbox-export-code') {
         // --- 1. Export Code Parsing ---
         // We use a robust scanner to handle nested tags and balanced parentheses
-        interface ExportTagMatch {
-            tagName: string;
-            tagContent: string;
-            tagStart: number;
-            tagEnd: number;
-            contentStart: number;
-        }
-
-        const findExportTags = (input: string, baseOffset: number): ExportTagMatch[] => {
-            const results: ExportTagMatch[] = [];
-            let i = 0;
-            while (i < input.length) {
-                if (input[i] === '^') {
-                    const start = i;
-                    i++;
-                    // Find tag name
-                    let tagName = '';
-                    while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
-                        tagName += input[i];
-                        i++;
-                    }
-
-                    if (tagName === '') {
-                        // Just a caret, skip
-                        continue;
-                    }
-
-                    if (i < input.length && input[i] === '(') {
-                        // Potential tag with arguments: ^name(args)^
-                        const contentStartIdx = i + 1;
-                        let depth = 1;
-                        i++;
-                        let inString: string | null = null;
-                        let isEscaped = false;
-
-                        while (i < input.length) {
-                            const char = input[i];
-                            if (isEscaped) {
-                                isEscaped = false;
-                            } else if (char === '\\') {
-                                isEscaped = true;
-                            } else if (inString) {
-                                if (char === inString) {
-                                    inString = null;
-                                }
-                            } else if (char === '"' || char === "'") {
-                                inString = char;
-                            } else if (char === '(') {
-                                depth++;
-                            } else if (char === ')') {
-                                depth--;
-                            }
-
-                            if (depth === 0 && !inString) {
-                                if (i + 1 < input.length && input[i + 1] === '^') {
-                                    results.push({
-                                        tagName,
-                                        tagContent: input.substring(contentStartIdx, i),
-                                        tagStart: baseOffset + start,
-                                        tagEnd: baseOffset + i + 2,
-                                        contentStart: baseOffset + contentStartIdx
-                                    });
-                                    i += 2;
-                                    break;
-                                } else {
-                                    // Found closing paren but no trailing caret, strictly no match in TBX
-                                    break;
-                                }
-                            }
-                            i++;
-                        }
-                    } else if (i < input.length && input[i] === '^') {
-                        // Argument-less tag: ^name^
-                        results.push({
-                            tagName,
-                            tagContent: '',
-                            tagStart: baseOffset + start,
-                            tagEnd: baseOffset + i + 1,
-                            contentStart: -1
-                        });
-                        i++;
-                    }
-                } else {
-                    i++;
-                }
-            }
-            return results;
-        };
-
-        const allTags: ExportTagMatch[] = [];
-        const processInputRecursively = (input: string, baseOffset: number) => {
-            const tags = findExportTags(input, baseOffset);
-            for (const tag of tags) {
-                allTags.push(tag);
-                if (tag.tagContent) {
-                    processInputRecursively(tag.tagContent, tag.contentStart);
-                }
-            }
-        };
-
-        processInputRecursively(text, 0);
+        const allTags = collectExportTags(text, 0);
 
         const processedTagStarts = new Set<number>();
         for (const tag of allTags) {
@@ -1050,6 +1054,9 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
         diagnostics.push(...actionDiagnostics);
     }
 
+    if (diagnostics.length > settings.maxNumberOfProblems) {
+        diagnostics.length = settings.maxNumberOfProblems;
+    }
     connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
 
@@ -1085,6 +1092,8 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 } else if (buffer[i] === quote) {
                     i++;
                     break;
+                } else if (buffer[i] === '\n' || buffer[i] === '\r') {
+                    break;
                 } else {
                     buffer[i] = ' ';
                     i++;
@@ -1095,6 +1104,10 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
         }
     }
     maskedText = buffer.join('');
+
+    // Strings and comments are masked, but parentheses and their contents remain.
+    // Declaration/assignment checks run on this so they can still see call arguments.
+    const maskedCode = maskedText;
 
     // 3. Mask Parens (Keep parens, mask content)
     // Now safe because strings and tags are already masked to spaces.
@@ -1147,15 +1160,15 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
         lowerToOriginal.set(attr.name.toLowerCase(), attr.name);
     }
 
-    const varDeclPatternForScan = /var:([a-zA-Z0-9]+)\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
-    while ((m = varDeclPatternForScan.exec(text))) {
-        validIdentifiers.add(m[1]);
+    const varDeclPatternForScan = /var(?:\s*:\s*([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
+    while ((m = varDeclPatternForScan.exec(maskedCode))) {
+        if (m[1]) validIdentifiers.add(m[1]);
         validIdentifiers.add(m[2]);
         lowerToOriginal.set(m[2].toLowerCase(), m[2]);
     }
 
     const funcPatternForScan = /function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)/g;
-    while ((m = funcPatternForScan.exec(text))) {
+    while ((m = funcPatternForScan.exec(maskedCode))) {
         validIdentifiers.add(m[1]);
         lowerToOriginal.set(m[1].toLowerCase(), m[1]);
     }
@@ -1215,7 +1228,6 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 !nextLineStartsOperator &&
                 !nextLineStartsBlock &&
                 !isControlStatement &&
-                !endsWithOperator &&
                 !endsWithElse &&
                 /[a-zA-Z0-9_"')]/.test(trimmed[trimmed.length - 1])) {
                 diagnostics.push({
@@ -1233,8 +1245,8 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
     }
 
     // --- 4. Assignment Type Checking ---
-    const attrAssignmentPattern = /(\$[a-zA-Z0-9_]+)\s*=\s*([^;]+);?/g;
-    while ((m = attrAssignmentPattern.exec(text))) {
+    const attrAssignmentPattern = /(\$[a-zA-Z0-9_]+)\s*=(?!=)\s*([^;]+);?/g;
+    while ((m = attrAssignmentPattern.exec(maskedCode))) {
         const varName = m[1];
         const rhs = m[2].trim();
         const attr = systemAttributes.get(varName);
@@ -1256,8 +1268,8 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
     }
 
     const localVars = new Map<string, string>();
-    const varDeclPattern = /var:([a-zA-Z0-9]+)\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
-    while ((m = varDeclPattern.exec(text))) {
+    const varDeclPattern = /var(?:\s*:\s*([a-zA-Z0-9_]+))?\s+([a-zA-Z0-9_]+)(?:\s*=\s*([^;]+))?;?/g;
+    while ((m = varDeclPattern.exec(maskedCode))) {
         const typeDecl = m[1];
         const varName = m[2];
 
@@ -1273,9 +1285,9 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
             });
         }
         const rhs = m[3] ? m[3].trim() : null;
-        localVars.set(varName, typeDecl);
+        if (typeDecl) localVars.set(varName, typeDecl);
 
-        if (rhs) {
+        if (rhs && typeDecl) {
             const inferredType = evaluateExpressionType(rhs, localVars);
             if (inferredType && !isCompatible(typeDecl, inferredType)) {
                 diagnostics.push({
@@ -1291,8 +1303,8 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
         }
     }
 
-    const varAssignPattern = /([a-zA-Z0-9_]+)\s*=\s*([^;]+);?/g;
-    while ((m = varAssignPattern.exec(text))) {
+    const varAssignPattern = /([a-zA-Z0-9_]+)\s*=(?!=)\s*([^;]+);?/g;
+    while ((m = varAssignPattern.exec(maskedCode))) {
         const varName = m[1];
         const rhs = m[2].trim();
 
@@ -1313,9 +1325,10 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 }
             }
         }
+    }
+
     // --- 5. Unused and Duplicate Symbol Detection ---
     const localUsage = new Map<string, { pos: Position, length: number, used: boolean, kind: 'variable' | 'parameter' }>();
-    const funcUsage = new Map<string, { pos: Position, length: number, count: number }>();
     const declaredFuncsInFile = new Set<string>();
 
     // Pass 1: Gather definitions and all usages
@@ -1337,12 +1350,18 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                     });
                 }
                 declaredFuncsInFile.add(name);
-                funcUsage.set(name, { pos: textDocument.positionAt(tokens[m].start), length: name.length, count: 0 });
             }
         } else if (t.type === 'Keyword' && t.value === 'var') {
-            // var Name
+            // var name / var:Type name
             let m = k + 1;
-            while (m < tokens.length && (tokens[m].type === 'Whitespace' || tokens[m].value === ':')) m++; // Skip :type too
+            while (m < tokens.length && tokens[m].type === 'Whitespace') m++;
+            if (m < tokens.length && tokens[m].value === ':') {
+                // Skip ':', the type identifier, and following whitespace
+                m++;
+                while (m < tokens.length && tokens[m].type === 'Whitespace') m++;
+                if (m < tokens.length && tokens[m].type === 'Identifier') m++;
+                while (m < tokens.length && tokens[m].type === 'Whitespace') m++;
+            }
             if (m < tokens.length && tokens[m].type === 'Identifier') {
                 localUsage.set(tokens[m].value, { pos: textDocument.positionAt(tokens[m].start), length: tokens[m].value.length, used: false, kind: 'variable' });
             }
@@ -1353,12 +1372,6 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 const def = localUsage.get(t.value)!;
                 if (textDocument.offsetAt(def.pos) !== t.start) {
                     def.used = true;
-                }
-            }
-            if (funcUsage.has(t.value)) {
-                const def = funcUsage.get(t.value)!;
-                if (textDocument.offsetAt(def.pos) !== t.start) {
-                    def.count++;
                 }
             }
         }
@@ -1375,7 +1388,6 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
                 source: 'Tinderbox Action Code'
             });
         }
-        }
     }
 
     return diagnostics;
@@ -1385,17 +1397,9 @@ function performActionCodeValidation(text: string, textDocument: TextDocument, b
 function recursiveInferType(text: string, document: TextDocument, offset: number): string | null {
     // Look backwards from offset
     const content = document.getText();
-    const before = content.slice(0, offset).trimEnd();
 
-    // 1. Check for method call at end: e.g. .reverse()
-    // We match parentheses balanced? No, regex is hard.
-    // Simple heuristic: ".methodName("
-    const methodMatch = before.match(/\.([a-zA-Z0-9_]+)\s*\([^)]*\)$/);
-    // Note: this regex is simplistic and won't handle nested parens well.
-    // For accurate chaining, we might need a better parser or step backwards token by token.
-    // Let's try a simpler approach: match the immediate preceding token.
-
-    // Better Approach: extract the chain.
+    // Extract the chain.
+    // Find the start of the expression ending at offset.
     // Find the start of the expression ending at offset.
     // e.g. "$MyList.sort.reverse" (cursor after reverse)
     // or "$MyList.sort().reverse"
@@ -1527,7 +1531,10 @@ function isCompatible(targetType: string, valueType: string): boolean {
     if (normTarget === 'list' && (normValue === 'list' || normValue === 'set')) return true;
     if (normTarget === 'set' && (normValue === 'list' || normValue === 'set')) return true;
 
-    // Loose compatibility for others or unknown types
+    // Incompatible only when both sides are known primitive types that differ;
+    // unknown/other types stay permissive to avoid false positives.
+    const knownTypes = ['string', 'number', 'boolean', 'color', 'list', 'set', 'date', 'interval', 'dictionary'];
+    if (knownTypes.includes(normTarget) && knownTypes.includes(normValue)) return false;
     return true;
 }
 
@@ -1537,21 +1544,91 @@ function escapeRegExp(string: string) {
 
 const workspaceFiles = new Set<string>();
 
+// Paths of the registered workspace folders (fsPath form), used to keep
+// client-supplied file URIs confined to the workspace.
+let workspaceFolderPaths: string[] = [];
+
+// Resolve a URI to a local filesystem path for reading.
+// Only `file:` URIs inside a registered workspace folder (or an open document
+// when no workspace folders exist) are resolved; anything else returns null.
+function workspaceLocalPath(uri: string): string | null {
+    let filePath: string;
+    try {
+        const parsed = URI.parse(uri);
+        if (parsed.scheme !== 'file') return null;
+        filePath = parsed.fsPath;
+    } catch {
+        return null;
+    }
+    if (!filePath) return null;
+    if (workspaceFolderPaths.length === 0) {
+        // Single-file mode: only trust URIs that are open in the editor.
+        return documents.get(uri) ? filePath : null;
+    }
+    const resolved = path.resolve(filePath);
+    for (const folder of workspaceFolderPaths) {
+        const rel = path.relative(folder, resolved);
+        if (rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel))) {
+            return resolved;
+        }
+    }
+    // An open document outside the workspace folders is still legitimate to read.
+    return documents.get(uri) ? resolved : null;
+}
+
+// Cached contents of workspace files so reference/call-hierarchy searches do not
+// hit the disk on every request. Kept in sync by indexFileForCache,
+// updateDocumentCache and the watched-files handler.
+const workspaceTextCache = new Map<string, string>();
+
+async function getWorkspaceFileText(uri: string): Promise<string | null> {
+    const openDoc = documents.get(uri);
+    if (openDoc) return openDoc.getText();
+    const cached = workspaceTextCache.get(uri);
+    if (cached !== undefined) return cached;
+    const filePath = workspaceLocalPath(uri);
+    if (!filePath) return null;
+    try {
+        const stat = await fs.promises.stat(filePath);
+        if (stat.size > MAX_INDEX_FILE_SIZE) return null;
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        workspaceTextCache.set(uri, content);
+        return content;
+    } catch {
+        return null;
+    }
+}
+
 connection.onDidChangeWatchedFiles(async _change => {
-    // Re-scan workspace if files are added/deleted
+    // Re-scan workspace if files are added/changed/deleted
     for (const event of _change.changes) {
         const uri = event.uri;
-        if (event.type === 1) { // Created
+        if (event.type === 1 || event.type === 2) { // Created or Changed
+            // Open documents are kept in sync via didChangeContent; skip them here.
+            if (documents.get(uri)) continue;
             workspaceFiles.add(uri);
             try {
-                const docText = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
-                const doc = TextDocument.create(uri, 'tinderbox-action-code', 0, docText);
+                const filePath = workspaceLocalPath(uri);
+                if (!filePath) continue;
+                const stat = await fs.promises.stat(filePath);
+                if (stat.size > MAX_INDEX_FILE_SIZE) continue;
+                const docText = await fs.promises.readFile(filePath, 'utf8');
+                workspaceTextCache.set(uri, docText);
+                const languageId = path.extname(filePath).toLowerCase() === '.tbxe'
+                    ? 'tinderbox-export-code'
+                    : 'tinderbox-action-code';
+                const doc = TextDocument.create(uri, languageId, 0, docText);
                 const symbols = extractSymbolsFromText(docText, uri, doc);
-                if (symbols.length > 0) workspaceSymbolCache.set(uri, symbols);
+                if (symbols.length > 0) {
+                    workspaceSymbolCache.set(uri, symbols);
+                } else {
+                    workspaceSymbolCache.delete(uri);
+                }
             } catch (e) {}
         } else if (event.type === 3) { // Deleted
             workspaceFiles.delete(uri);
             workspaceSymbolCache.delete(uri);
+            workspaceTextCache.delete(uri);
         }
     }
     rebuildUserFunctionNameCache();
@@ -2062,12 +2139,11 @@ connection.onCompletion(
         const isExportCode = document.languageId === 'tinderbox-export-code';
 
         if (isExportCode) {
-            // Check if we are inside a ^...^ block
-            const caretRegex = /\^/g;
-            let m;
+            // Check if we are inside a ^...^ block.
+            // Tokenize so carets inside strings/comments don't count.
             let lastCaret = -1;
-            while ((m = caretRegex.exec(textBefore))) {
-                lastCaret = m.index;
+            for (const t of tokenize(textBefore)) {
+                if (t.type === 'Punctuation' && t.value === '^') lastCaret = t.start;
             }
 
             if (lastCaret !== -1) {
@@ -2496,7 +2572,8 @@ connection.onCompletionResolve(
 // --- Semantic Tokens Handler ---
 // Moved tokenTypes and legend definition to top of file for consistency
 
-connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
+connection.languages.semanticTokens.on(async (params: SemanticTokensParams) => {
+    await resourcesPromise;
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return { data: [] };
     const text = doc.getText();
@@ -2518,8 +2595,16 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     let currentFunctionParams = new Set<string>();
     let prevTokenWasFunctionKeyword = false;
     const isExportCode = doc.languageId === 'tinderbox-export-code';
-    let insideExportTag = false;
-    let justStartedExportTag = false;
+
+    // For export code, precompute tag ranges so nested tags are handled
+    // correctly (a simple caret-parity toggle mis-tracks nesting).
+    const exportTagRanges = isExportCode ? collectExportTags(text, 0) : [];
+    const tagNameOffsets = new Set<number>();
+    for (const tag of exportTagRanges) {
+        tagNameOffsets.add(tag.tagStart + 1);
+    }
+    const inExportTag = (offset: number) =>
+        exportTagRanges.some(t => offset >= t.tagStart && offset < t.tagEnd);
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -2538,19 +2623,17 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
             prevTokenWasFunctionKeyword = false;
         } else if (token.type === 'Keyword' || token.type === 'Identifier') {
             const word = token.value;
-            if (isExportCode && !insideExportTag) {
+            if (isExportCode && !inExportTag(token.start)) {
                 // エクスポートタグの外側では基本ハイライトしない
                 prevTokenWasFunctionKeyword = false;
-            } else if (isExportCode && justStartedExportTag && !word.startsWith('$')) {
-                // エクスポートタグの直後の単語（例: ^value(...)^ の value） -> method
+            } else if (isExportCode && tagNameOffsets.has(token.start) && !word.startsWith('$')) {
+                // エクスポートタグ名（例: ^value(...)^ の value） -> method
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('method'), (1 << tokenModifiers.indexOf('defaultLibrary')));
-                justStartedExportTag = false;
                 prevTokenWasFunctionKeyword = false;
             } else if (word === 'function') {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = true;
-                justStartedExportTag = false;
-                
+
                 // 新しい関数の解析前にパラメータキャッシュをクリア
                 currentFunctionParams.clear();
 
@@ -2575,11 +2658,9 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 // 関数定義名 -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (controlKeywords.has(word) || booleanKeywords.has(word)) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), 0);
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (tinderboxDataTypes.has(word.toLowerCase())) {
                 // date() などの関数呼び出し、またはドット演算子（.date）としての使用かチェック
                 let isFunction = false;
@@ -2598,16 +2679,13 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('type'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (tinderboxDesignators.has(word.toLowerCase())) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('keyword'), (1 << tokenModifiers.indexOf('defaultLibrary')));
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (allUserFunctionNames.has(word)) {
                 // ユーザー定義関数の呼び出し -> function
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('function'), 0);
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (currentFunctionParams.has(word)) {
                 // 関数の引数 -> parameter
                 // 定義箇所（braceDepth == 0 の場合）か使用箇所（braceDepth > 0 の場合）かを判別
@@ -2617,7 +2695,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 }
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('parameter'), modifierMask);
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (word.startsWith('$')) {
                 // 属性のハンドリング
                 if (systemAttributes.has(word)) {
@@ -2633,7 +2710,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('enumMember'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else if (keywordNames.has(word)) {
                 // 組み込み関数 / 演算子 -> method + defaultLibrary
                 let typeIdx = tokenTypes.indexOf('method');
@@ -2652,7 +2728,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                 }
                 builder.push(startPos.line, startPos.character, token.length, typeIdx, modifierMask);
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             } else {
                 // ドット演算子としての使用かチェック (例: vList.collect_if)
                 let prev = i - 1;
@@ -2665,7 +2740,6 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
                     builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('variable'), 0);
                 }
                 prevTokenWasFunctionKeyword = false;
-                justStartedExportTag = false;
             }
         } else if (token.value === '{') {
             braceDepth++;
@@ -2679,12 +2753,9 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
         } else if (token.value === '^') {
             if (isExportCode) {
                 builder.push(startPos.line, startPos.character, token.length, tokenTypes.indexOf('macro'), 0);
-                insideExportTag = !insideExportTag;
-                justStartedExportTag = insideExportTag;
             }
             prevTokenWasFunctionKeyword = false;
         } else {
-            justStartedExportTag = false;
             prevTokenWasFunctionKeyword = false;
         }
     }
@@ -2709,96 +2780,7 @@ connection.onHover(
         if (isExportCode) {
             // Priority: Check if we are over an Export Tag (^...^)
             // We use the same recursive logic as validation to find the exact tag at the cursor
-            interface ExportTagMatch {
-                tagName: string;
-                tagContent: string;
-                tagStart: number;
-                tagEnd: number;
-                contentStart: number;
-            }
-
-            const findExportTags = (input: string, baseOffset: number): ExportTagMatch[] => {
-                const results: ExportTagMatch[] = [];
-                let i = 0;
-                while (i < input.length) {
-                    if (input[i] === '^') {
-                        const start = i;
-                        i++;
-                        let tagName = '';
-                        while (i < input.length && /[a-zA-Z0-9$]/.test(input[i])) {
-                            tagName += input[i];
-                            i++;
-                        }
-                        if (tagName === '') continue;
-
-                        if (i < input.length && input[i] === '(') {
-                            const contentStartIdx = i + 1;
-                            let depth = 1;
-                            i++;
-                            let inString: string | null = null;
-                            let isEscaped = false;
-
-                            while (i < input.length) {
-                                const char = input[i];
-                                if (isEscaped) {
-                                    isEscaped = false;
-                                } else if (char === '\\') {
-                                    isEscaped = true;
-                                } else if (inString) {
-                                    if (char === inString) {
-                                        inString = null;
-                                    }
-                                } else if (char === '"' || char === "'") {
-                                    inString = char;
-                                } else if (char === '(') {
-                                    depth++;
-                                } else if (char === ')') {
-                                    depth--;
-                                }
-
-                                if (depth === 0 && !inString) {
-                                    if (i + 1 < input.length && input[i + 1] === '^') {
-                                        results.push({
-                                            tagName,
-                                            tagContent: input.substring(contentStartIdx, i),
-                                            tagStart: baseOffset + start,
-                                            tagEnd: baseOffset + i + 2,
-                                            contentStart: baseOffset + contentStartIdx
-                                        });
-                                        i += 2;
-                                        break;
-                                    }
-                                    break;
-                                }
-                                i++;
-                            }
-                        } else if (i < input.length && input[i] === '^') {
-                            results.push({
-                                tagName,
-                                tagContent: '',
-                                tagStart: baseOffset + start,
-                                tagEnd: baseOffset + i + 1,
-                                contentStart: -1
-                            });
-                            i++;
-                        }
-                    } else {
-                        i++;
-                    }
-                }
-                return results;
-            };
-
-            const allTags: ExportTagMatch[] = [];
-            const collectRecursively = (input: string, baseOffset: number) => {
-                const tags = findExportTags(input, baseOffset);
-                for (const tag of tags) {
-                    allTags.push(tag);
-                    if (tag.tagContent) collectRecursively(tag.tagContent, tag.contentStart);
-                }
-            };
-
-            collectRecursively(content, 0);
+            const allTags = collectExportTags(content, 0);
 
             // Find the most specific (inner-most) tag that contains the cursor
             const containingTags = allTags
@@ -3235,6 +3217,27 @@ connection.onSignatureHelp(async (params) => {
                         activeParameter: activeParameter
                     };
                 }
+
+                // User-defined functions (current doc + workspace cache)
+                if (allUserFunctionNames.has(lastPart) || allUserFunctionNames.has(lastPart.toLowerCase())) {
+                    const symbols = [
+                        ...extractSymbolsFromText(text, doc.uri, doc),
+                        ...Array.from(workspaceSymbolCache.values()).flat()
+                    ];
+                    const funcSym = symbols.find(s => s.name === lastPart && s.kind === SymbolKind.Function);
+                    if (funcSym) {
+                        const label = funcSym.signature || `${funcSym.name}(...)`;
+                        return {
+                            signatures: [{
+                                label,
+                                documentation: { kind: 'markdown', value: `User function defined in ${funcSym.location.uri}` },
+                                parameters: []
+                            }],
+                            activeSignature: 0,
+                            activeParameter: activeParameter
+                        };
+                    }
+                }
             }
         }
     }
@@ -3429,7 +3432,7 @@ function tokenize(text: string): Token[] {
             continue;
         }
 
-        // String
+        // String (unterminated strings stop at end of line)
         if (char === '"' || char === "'") {
             let start = i;
             let inString = char;
@@ -3442,6 +3445,8 @@ function tokenize(text: string): Token[] {
                     isEscaped = true;
                 } else if (text[i] === inString) {
                     i++;
+                    break;
+                } else if (text[i] === '\n' || text[i] === '\r') {
                     break;
                 }
                 i++;
@@ -3564,8 +3569,8 @@ async function getReferenceLocations(doc: TextDocument, offset: number): Promise
         for (const uri of workspaceFiles) {
             if (uri === doc.uri) continue;
             try {
-                const content = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
-                if (content.includes(targetName)) {
+                const content = await getWorkspaceFileText(uri);
+                if (content && content.includes(targetName)) {
                     const otherTokens = tokenize(content);
                     const otherDoc = TextDocument.create(uri, 'tinderbox-action-code', 0, content);
                     otherTokens.forEach(t => {
@@ -3603,7 +3608,8 @@ connection.onDocumentHighlight(async (params: DocumentHighlightParams): Promise<
     }));
 });
 
-connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
+connection.onCodeAction(async (params: CodeActionParams): Promise<CodeAction[]> => {
+    await resourcesPromise;
     const codeActions: CodeAction[] = [];
     params.context.diagnostics.forEach(diagnostic => {
         // 1. Smart Quote Quick Fix
@@ -3780,14 +3786,9 @@ async function getReferenceLocationsForName(targetName: string): Promise<Locatio
     const references: Location[] = [];
     for (const uri of workspaceFiles) {
         try {
-            let content: string;
+            const content = await getWorkspaceFileText(uri);
             const openDoc = documents.get(uri);
-            if (openDoc) {
-                content = openDoc.getText();
-            } else {
-                content = await fs.promises.readFile(URI.parse(uri).fsPath, 'utf8');
-            }
-            if (content.includes(targetName)) {
+            if (content && content.includes(targetName)) {
                 const tokens = tokenize(content);
                 const doc = openDoc || TextDocument.create(uri, 'tinderbox-action-code', 0, content);
                 tokens.forEach((t, i) => {
@@ -3807,12 +3808,9 @@ async function getContainingFunction(location: Location): Promise<{ name: string
     const docUri = location.uri;
     let text: string;
     try {
-        const openDoc = documents.get(docUri);
-        if (openDoc) {
-            text = openDoc.getText();
-        } else {
-            text = await fs.promises.readFile(URI.parse(docUri).fsPath, 'utf8');
-        }
+        const fileText = await getWorkspaceFileText(docUri);
+        if (fileText === null) return null;
+        text = fileText;
     } catch (e) {
         return null;
     }
@@ -3940,15 +3938,16 @@ connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
     const outgoingCalls: CallHierarchyOutgoingCall[] = [];
     let text: string;
     try {
-        const openDoc = documents.get(item.uri);
-        if (openDoc) text = openDoc.getText();
-        else text = await fs.promises.readFile(URI.parse(item.uri).fsPath, 'utf8');
+        const fileText = await getWorkspaceFileText(item.uri);
+        if (fileText === null) return null;
+        text = fileText;
     } catch (e) { return null; }
-    
+
     const doc = documents.get(item.uri) || TextDocument.create(item.uri, 'tinderbox-action-code', 0, text);
     const startOffset = doc.offsetAt(item.range.start);
     const endOffset = doc.offsetAt(item.range.end);
     const tokens = tokenize(text);
+    const symbols = extractSymbolsFromText(text, item.uri, doc);
     const callsByName = new Map<string, { uri: string, range: Range, selectionRange: Range, fromRanges: Range[] }>();
 
     for (let i = 0; i < tokens.length; i++) {
@@ -3960,7 +3959,6 @@ connection.languages.callHierarchy.onOutgoingCalls(async (params) => {
                 if (next < tokens.length && tokens[next].value === '(') {
                     const targetName = t.value;
                     let targetDef: { uri: string, range: Range, selectionRange: Range } | undefined;
-                    const symbols = extractSymbolsFromText(text, item.uri, doc);
                     const funcSym = symbols.find(s => s.name === targetName && s.kind === SymbolKind.Function);
                     if (funcSym) {
                         targetDef = { uri: item.uri, range: funcSym.location.range, selectionRange: funcSym.selectionRange };
