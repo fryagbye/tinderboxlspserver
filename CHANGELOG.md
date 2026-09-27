@@ -2,7 +2,7 @@
 
 All notable changes to the "tinderbox-action-code-lsp" extension will be documented in this file.
 
-## [0.4.12] - 2026-09-26
+## [0.4.13] - 2026-09-26
 ### Security
 - File access is now restricted to `file:` URIs inside registered workspace folders (or documents open in the editor). Non-file schemes and malformed URIs are rejected instead of being resolved to arbitrary filesystem paths.
 - Workspace scanning is bounded (maximum depth 20, 5,000 files, 5 MB per file) and skips `node_modules`, `.git`, and build output directories to avoid excessive resource usage on large folders.

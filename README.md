@@ -104,7 +104,7 @@ If you are working with other file types (like `.txt`), you can manually set the
 
 ## Release Notes
 
-### 0.4.12
+### 0.4.13
 - **Security**: File access is now confined to `file:` URIs inside workspace folders (or open documents), and workspace scanning is bounded (depth/file-count/size limits; `node_modules` and build outputs are skipped).
 - **Fix**: Duplicate diagnostics for unused variables/duplicate functions, and type mismatch detection that never fired.
 - **Fix**: Typed declarations (`var:string s`) no longer flag the type name as an unused variable; strings and comments no longer trigger false-positive diagnostics.
